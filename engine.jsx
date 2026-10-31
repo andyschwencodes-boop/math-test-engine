@@ -1,5 +1,5 @@
-// math-test-engine v1.3.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.3.0/engine.jsx
+// math-test-engine v1.4.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.4.0/engine.jsx
 const { useState, useEffect, useRef } = React;
 
 // --- PRINT CSS ---
@@ -158,10 +158,11 @@ window.partList = (s, ids) => {
   return (visible.length ? visible : ids).map((id, i) => ({ id, letter: String.fromCharCode(97 + i) }));
 };
 // One part of a question: prints its letter, and on screen offers "Hide part" while more than one is visible.
+// The button sits inside the part's box so moving onto it keeps the part hovered.
 window.Part = ({ s, u, part, parts, label = true, className = '', children }) => (
   <div className={`relative group/part flex items-baseline ${className}`}>
     {(u && parts && parts.length > 1) && (
-      <button onClick={() => u('hidden_parts', [...((s && s.hidden_parts) || []), part.id])} className="absolute -top-5 right-0 z-30 opacity-0 pointer-events-none group-hover/part:opacity-100 group-hover/part:pointer-events-auto transition-opacity px-1.5 py-0.5 text-[10px] font-bold text-gray-500 bg-white hover:text-red-600 hover:bg-red-50 rounded border border-gray-200 hover:border-red-200 print:hidden" title="Hide this part on every form. The remaining parts are re-lettered and the answer key updates.">Hide part {part.letter}</button>
+      <button onClick={() => u('hidden_parts', [...((s && s.hidden_parts) || []), part.id])} className="absolute top-0 right-0 z-30 invisible group-hover/part:visible bg-white shadow-sm px-1.5 py-0.5 text-[10px] font-bold text-gray-500 bg-white hover:text-red-600 hover:bg-red-50 rounded border border-gray-200 hover:border-red-200 print:hidden" title="Hide this part on every form. The remaining parts are re-lettered and the answer key updates.">Hide part {part.letter}</button>
     )}
     {label && <span className="mr-1 shrink-0">{part.letter}.</span>}
     <div className="flex-1 min-w-0">{children}</div>
@@ -357,22 +358,22 @@ const RubricRenderer = ({ mode, isFirstSection, customHTML, settings, setSetting
   const renderHeaders = (cols) => (
     <thead className="bg-gray-200">
       <tr>
-        <th className={`border border-black p-1 w-1/${cols} leading-tight`}><span className="font-bold text-[10pt] mr-1"><window.SettingsEditableText field="hN" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hNDesc" settings={settings} setSettings={setSettings}/></th>
-        <th className={`border border-black p-1 w-1/${cols} leading-tight`}><span className="font-bold text-[10pt] mr-1"><window.SettingsEditableText field="hC" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hCDesc" settings={settings} setSettings={setSettings}/></th>
-        {cols === 5 && <th className="border border-black p-1 w-1/5 leading-tight"><span className="font-bold text-[10pt] mr-1"><window.SettingsEditableText field="hB" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hBDesc" settings={settings} setSettings={setSettings}/></th>}
-        <th className={`border border-black p-1 w-1/${cols} leading-tight`}><span className="font-bold text-[10pt] mr-1"><window.SettingsEditableText field="hAm" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hAmDesc" settings={settings} setSettings={setSettings}/></th>
-        <th className={`border border-black p-1 w-1/${cols} leading-tight`}><span className="font-bold text-[10pt] mr-1"><window.SettingsEditableText field="hA" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hADesc" settings={settings} setSettings={setSettings}/></th>
+        <th className={`border border-black px-1 py-0.5 w-1/${cols} leading-tight text-[8pt]`}><span className="font-bold text-[8.5pt] mr-1"><window.SettingsEditableText field="hN" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hNDesc" settings={settings} setSettings={setSettings}/></th>
+        <th className={`border border-black px-1 py-0.5 w-1/${cols} leading-tight text-[8pt]`}><span className="font-bold text-[8.5pt] mr-1"><window.SettingsEditableText field="hC" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hCDesc" settings={settings} setSettings={setSettings}/></th>
+        {cols === 5 && <th className="border border-black px-1 py-0.5 w-1/5 leading-tight text-[8pt]"><span className="font-bold text-[8.5pt] mr-1"><window.SettingsEditableText field="hB" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hBDesc" settings={settings} setSettings={setSettings}/></th>}
+        <th className={`border border-black px-1 py-0.5 w-1/${cols} leading-tight text-[8pt]`}><span className="font-bold text-[8.5pt] mr-1"><window.SettingsEditableText field="hAm" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hAmDesc" settings={settings} setSettings={setSettings}/></th>
+        <th className={`border border-black px-1 py-0.5 w-1/${cols} leading-tight text-[8pt]`}><span className="font-bold text-[8.5pt] mr-1"><window.SettingsEditableText field="hA" settings={settings} setSettings={setSettings}/></span><window.SettingsEditableText field="hADesc" settings={settings} setSettings={setSettings}/></th>
       </tr>
     </thead>
   );
-  if (mode === '5-point' && isFirstSection) return ( <table className="w-full text-[9pt] text-left border-collapse border border-black mb-4 bg-white table"> {renderHeaders(5)} <tbody> <tr className="align-top"> <td className="border border-black p-1"><window.SettingsEditableText field="c51" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c52" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c53" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c54" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c55" settings={settings} setSettings={setSettings}/></td> </tr> </tbody> </table> );
-  if (mode === '4-point' && isFirstSection) return ( <table className="w-full text-[9pt] text-left border-collapse border border-black mb-4 bg-white table"> {renderHeaders(4)} <tbody> <tr className="align-top"> <td className="border border-black p-1"><window.SettingsEditableText field="c41" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c42" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c43" settings={settings} setSettings={setSettings}/></td> <td className="border border-black p-1"><window.SettingsEditableText field="c44" settings={settings} setSettings={setSettings}/></td> </tr> </tbody> </table> );
+  if (mode === '5-point' && isFirstSection) return ( <table className="w-full text-[8pt] leading-snug text-left border-collapse border border-black mb-3 bg-white table"> {renderHeaders(5)} <tbody> <tr className="align-top"> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c51" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c52" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c53" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c54" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c55" settings={settings} setSettings={setSettings}/></td> </tr> </tbody> </table> );
+  if (mode === '4-point' && isFirstSection) return ( <table className="w-full text-[8pt] leading-snug text-left border-collapse border border-black mb-3 bg-white table"> {renderHeaders(4)} <tbody> <tr className="align-top"> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c41" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c42" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c43" settings={settings} setSettings={setSettings}/></td> <td className="border border-black px-1 py-0.5"><window.SettingsEditableText field="c44" settings={settings} setSettings={setSettings}/></td> </tr> </tbody> </table> );
   if (!isFirstSection && (mode === '5-point' || mode === '4-point')) { const cols = mode === '5-point' ? 5 : 4; return ( <table className="w-full text-[9pt] text-center border-collapse border border-black mb-4 bg-white table"> <thead className="bg-gray-200"> <tr> <th className={`border border-black p-1 w-1/${cols} font-bold`}><window.SettingsEditableText field="sN" settings={settings} setSettings={setSettings}/></th> <th className={`border border-black p-1 w-1/${cols} font-bold`}><window.SettingsEditableText field="sC" settings={settings} setSettings={setSettings}/></th> {cols === 5 && <th className="border border-black p-1 w-1/5 font-bold"><window.SettingsEditableText field="sB" settings={settings} setSettings={setSettings}/></th>} <th className={`border border-black p-1 w-1/${cols} font-bold`}><window.SettingsEditableText field="sAm" settings={settings} setSettings={setSettings}/></th> <th className={`border border-black p-1 w-1/${cols} font-bold`}><window.SettingsEditableText field="sA" settings={settings} setSettings={setSettings}/></th> </tr> </thead> </table> ); }
   return null;
 };
 
-// Content area is 9.4in tall both on screen (11in sheet, 0.8in top/bottom padding) and in print
-// (10.2in page inside 0.4in @page margins, 0.4in padding), so what fits in the preview fits on paper.
+// Content area is 9.6in tall both on screen (11in sheet, 0.7in top/bottom padding) and in print
+// (10.2in page inside 0.4in @page margins, 0.3in top/bottom padding), so what fits in the preview fits on paper.
 const PAGE_DPI = 96;
 const PageFrame = ({ isPrint, children }) => {
   const bodyRef = useRef(null);
@@ -385,7 +386,7 @@ const PageFrame = ({ isPrint, children }) => {
     if (next !== overflowIn) setOverflowIn(next);
   });
   return (
-    <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.4in' : '0.8in 0.4in' }} className={`bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
+    <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.3in 0.4in' : '0.7in 0.4in' }} className={`bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
       {(!isPrint && overflowIn > 0) && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[70] bg-red-600 text-white text-xs font-bold px-3 py-1 rounded shadow whitespace-nowrap print:hidden">
           Page is {overflowIn.toFixed(2)}in too tall and will be cut off when printed. Shrink a workspace or start a new page.
@@ -472,7 +473,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                             return (
                               <div key={uniqueId} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`} style={{ flex: `${grows ? 1 : 0} 0 auto` }}>
                                 {isAbsoluteFirst && (
-                                  <div className="flex flex-col sm:flex-row justify-between items-end border-b-2 border-gray-800 pb-2 mb-6 shrink-0 w-full">
+                                  <div className="flex flex-col sm:flex-row justify-between items-end border-b-2 border-gray-800 pb-2 mb-3 shrink-0 w-full">
                                     <div className="flex-1 w-full">
                                       {showFormLabels && <div className="inline-block bg-gray-200 text-gray-700 font-bold px-3 py-0.5 rounded-sm text-xs tracking-widest mb-2 uppercase">{formObj.id}</div>}
                                       <h1 className="text-2xl font-extrabold text-gray-900 uppercase tracking-wide"><window.GlobalEditableText val={formObj.title} onChange={(val) => !isPrint && updateFormTitle(val)} /></h1>
@@ -485,8 +486,8 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                   </div>
                                 )}
                                 {isFirst && (
-                                  <div className="mb-4 shrink-0 w-full">
-                                    <div className="mb-2 pb-1 border-b-2 border-gray-800 flex justify-between items-end mt-4">
+                                  <div className="mb-3 shrink-0 w-full">
+                                    <div className={`mb-2 pb-1 border-b-2 border-gray-800 flex justify-between items-end ${isAbsoluteFirst ? 'mt-1' : 'mt-4'}`}>
                                        <div className="flex items-center gap-3">
                                          <h2 className="text-xl font-bold uppercase tracking-wide text-gray-800"><window.GlobalEditableText val={section.title} onChange={(val) => !isPrint && updateSectionTitle(section.id, val)} /></h2>
                                          {!isPrint && sIndex > 0 && toggleSectionPageBreak && (
@@ -502,20 +503,21 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                 )}
                                 <div className="flex flex-row w-full gap-4 items-stretch" style={{ flex: '1 0 auto' }}>
                                   <div className="flex-1 w-full flex flex-col relative">
-                                    {/* Editor buttons float above the question so they never change how it wraps (screen matches print). */}
+                                    {/* Editor buttons overlay the top-right of the question (inside its box, so moving onto them keeps the
+                                        question hovered) and never change how it wraps (screen matches print). Hidden ones can't be clicked. */}
                                     {!isPrint && (
-                                      <div className="absolute -top-5 left-0 z-30 flex gap-1 print:hidden pointer-events-none group-hover/q:pointer-events-auto">
+                                      <div className="absolute top-0 right-0 z-30 flex gap-1 print:hidden invisible group-hover/q:visible">
                                         {!isPrint && setHiddenQuestions && (
-                                          <button onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200" title="Hide question from test"><EyeOff className="w-3 h-3" /> Hide</button>
+                                          <button onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])} className="inline-flex bg-white shadow-sm items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200" title="Hide question from test"><EyeOff className="w-3 h-3" /> Hide</button>
                                         )}
                                         {!isPrint && !isFirst && toggleItemPageBreak && (
-                                          <button onClick={() => toggleItemPageBreak(itemDef.id)} className={`${itemDef.pageBreak ? 'opacity-100 bg-blue-100 text-blue-700 border-blue-300' : 'opacity-0 group-hover/q:opacity-100 text-gray-500 border-transparent hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200'} transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border`} title="Start a new page before this question (all forms)">📄 {itemDef.pageBreak ? 'New page ON' : 'New page'}</button>
+                                          <button onClick={() => toggleItemPageBreak(itemDef.id)} className={`${itemDef.pageBreak ? 'visible bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200' : 'bg-white shadow-sm text-gray-500 border-gray-200 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200'} inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border`} title="Start a new page before this question (all forms)">📄 {itemDef.pageBreak ? 'New page ON' : 'New page'}</button>
                                         )}
                                         {(!isPrint && itemState?.hidden_parts?.length > 0) && (
-                                          <button onClick={() => update('hidden_parts', [])} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" title="Show all parts of this question again (all forms)"><Eye className="w-3 h-3" /> Restore {itemState.hidden_parts.length} hidden part{itemState.hidden_parts.length > 1 ? 's' : ''}</button>
+                                          <button onClick={() => update('hidden_parts', [])} className="visible inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" title="Show all parts of this question again (all forms)"><Eye className="w-3 h-3" /> Restore {itemState.hidden_parts.length} hidden part{itemState.hidden_parts.length > 1 ? 's' : ''}</button>
                                         )}
                                         {(!isPrint && itemState?.hide_svg) && (
-                                          <button onClick={() => update('hide_svg', false)} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200" title="Restore Image"><Eye className="w-3 h-3" /> Restore Image</button>
+                                          <button onClick={() => update('hide_svg', false)} className="inline-flex bg-white shadow-sm items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200" title="Restore Image"><Eye className="w-3 h-3" /> Restore Image</button>
                                         )}
                                       </div>
                                     )}

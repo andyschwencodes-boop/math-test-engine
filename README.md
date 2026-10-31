@@ -10,10 +10,10 @@ Load it in a payload's `<head>` after React, ReactDOM, KaTeX, Tailwind, and
 Babel standalone, **pinned to a release tag**:
 
 ```html
-<script type="text/babel" src="https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.3.0/engine.jsx"></script>
+<script type="text/babel" src="https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.4.0/engine.jsx"></script>
 ```
 
-Always pin a tag (`@v1.3.0`), never `@main`, so an engine change can't alter a
+Always pin a tag (`@v1.4.0`), never `@main`, so an engine change can't alter a
 test that's already been handed out.
 
 ## Releasing
