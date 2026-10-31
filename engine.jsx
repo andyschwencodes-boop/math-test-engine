@@ -1,5 +1,5 @@
-// math-test-engine v1.0.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.0.0/engine.jsx
+// math-test-engine v1.1.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.1.0/engine.jsx
 const { useState, useEffect, useRef } = React;
 
 // --- PRINT CSS ---
@@ -342,39 +342,106 @@ const RubricRenderer = ({ mode, isFirstSection, customHTML, settings, setSetting
   return null;
 };
 
-const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFormTitle, updateCourseTitle, updateSectionTitle, toggleSectionPageBreak, rubricMode, customRubricHTML, isPrint=false, questionFontSize="text-[12pt]", hiddenQuestions=[], setHiddenQuestions, showFormLabels=true, settings, setSettings, templates }) => {
+// Content area is 9.4in tall both on screen (11in sheet, 0.8in top/bottom padding) and in print
+// (10.2in page inside 0.4in @page margins, 0.4in padding), so what fits in the preview fits on paper.
+const PAGE_DPI = 96;
+const PageFrame = ({ isPrint, children }) => {
+  const bodyRef = useRef(null);
+  const [overflowIn, setOverflowIn] = useState(0);
+  useEffect(() => { // screen only: warn when content is taller than the printable area
+    if (isPrint || !bodyRef.current) return;
+    const el = bodyRef.current;
+    const over = Math.round(((el.scrollHeight - el.clientHeight) / PAGE_DPI) * 100) / 100;
+    const next = over > 0.02 ? over : 0;
+    if (next !== overflowIn) setOverflowIn(next);
+  });
+  return (
+    <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.4in' : '0.8in 0.4in' }} className={`bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
+      {(!isPrint && overflowIn > 0) && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[70] bg-red-600 text-white text-xs font-bold px-3 py-1 rounded shadow whitespace-nowrap print:hidden">
+          Page is {overflowIn.toFixed(2)}in too tall and will be cut off when printed. Shrink a workspace or start a new page.
+        </div>
+      )}
+      <div ref={bodyRef} className="flex flex-col flex-1 min-h-0">{children}</div>
+    </div>
+  );
+};
+
+// Workspace below a question. Auto: at least the template's `space`, plus an equal share of the page's
+// leftover height (when Auto-spread is on). Dragging pins an exact height (customSpace, may be 0);
+// double-clicking the handle returns to auto.
+const Workspace = ({ itemState, renderer, update, isPrint, autoFill }) => {
+  const ref = useRef(null);
+  const minIn = (renderer.space || 0) * 0.5;
+  const pinned = itemState?.customSpace !== undefined && itemState?.customSpace !== null;
+  const style = pinned ? { height: `${itemState.customSpace}in`, flex: '0 0 auto' }
+    : { minHeight: `${minIn}in`, flex: autoFill ? '1 0 auto' : '0 0 auto' };
+  return (
+    <div ref={ref} className="relative w-full border-b border-transparent hover:border-blue-200 transition-colors" style={style}>
+      {!isPrint && (
+        <div className="absolute bottom-0 left-0 w-full h-4 translate-y-1/2 cursor-ns-resize flex justify-center items-center opacity-0 group-hover/q:opacity-100 z-20 print:hidden"
+          title="Drag to set this question's workspace. Double-click to return to auto spacing."
+          onDoubleClick={() => update('customSpace', null)}
+          onMouseDown={(e) => {
+            e.preventDefault(); const startY = e.clientY;
+            const startSpace = ref.current ? ref.current.getBoundingClientRect().height / PAGE_DPI : minIn;
+            const onMove = (mEvent) => { update('customSpace', Math.max(0, Math.round((startSpace + (mEvent.clientY - startY) / PAGE_DPI) * 20) / 20)); };
+            const onEnd = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onEnd); };
+            document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onEnd); }}>
+          <div className={`w-1/2 max-w-[200px] h-1.5 rounded-full shadow-sm transition-colors ${pinned ? 'bg-amber-400 hover:bg-amber-500' : 'bg-blue-300 hover:bg-blue-500'}`}></div>
+          {pinned && <span className="absolute right-0 -top-4 text-[10px] font-bold text-amber-700 bg-white px-1 rounded">{itemState.customSpace.toFixed(2)}in · double-click for auto</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFormTitle, updateCourseTitle, updateSectionTitle, toggleSectionPageBreak, toggleItemPageBreak, rubricMode, customRubricHTML, isPrint=false, questionFontSize="text-[12pt]", hiddenQuestions=[], setHiddenQuestions, showFormLabels=true, settings, setSettings, templates }) => {
+  const autoFill = settings?.autoFillSpace !== false;
+  const isHiddenItem = (item) => hiddenQuestions.includes(`${item.id}-${item.t}`);
   const qNumMap = {}; let counter = 1; let globalFirstVisibleId = null;
   formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; if (!globalFirstVisibleId) globalFirstVisibleId = uniqueId; } }); });
-  const pages = []; let currentPage = [];
+
+  // Pages are lists of chunks { section, sIndex, items }. A page starts before a section with pageBreak,
+  // or before any later question in a section whose item has pageBreak.
+  const pages = []; let page = [];
   formObj.sections.forEach((section, sIndex) => {
-    const hasVisibleItems = section.items.some(item => !hiddenQuestions.includes(`${item.id}-${item.t}`));
-    if (!hasVisibleItems) return;
-    if (section.pageBreak && currentPage.length > 0) { pages.push(currentPage); currentPage = []; }
-    currentPage.push({ section, sIndex });
+    const visible = section.items.filter(item => !isHiddenItem(item));
+    if (!visible.length) return;
+    let chunk = null;
+    visible.forEach((item, vIndex) => {
+      const breakHere = vIndex === 0 ? section.pageBreak : item.pageBreak;
+      if (breakHere && (page.length > 0 || chunk)) { if (chunk) page.push(chunk); pages.push(page); page = []; chunk = null; }
+      if (!chunk) chunk = { section, sIndex, items: [] };
+      chunk.items.push(item);
+    });
+    page.push(chunk);
   });
-  if (currentPage.length > 0) pages.push(currentPage);
+  if (page.length > 0) pages.push(page);
+  const isPinned = (item) => params[item.id]?.customSpace !== undefined && params[item.id]?.customSpace !== null;
 
   return (
     <div className="flex flex-col gap-8 print:gap-0 print:block items-center w-full">
-      {pages.map((pageSections, pIndex) => (
-         <div key={pIndex} style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: '0.4in' }} className={`bg-white mx-auto box-border block relative ${isPrint ? 'print-page-break print:overflow-hidden' : 'shadow-2xl border border-gray-300 mb-12 overflow-visible'}`}>
-             <div className="space-y-0 flex flex-col">
-                {pageSections.map(({section, sIndex}) => {
+      {pages.map((pageChunks, pIndex) => (
+         <PageFrame key={pIndex} isPrint={isPrint}>
+                {pageChunks.map(({section, sIndex, items}) => {
                     let sectionStandard = null;
                     const allStandards = section.items.map(item => templates[item.t].standard);
                     if (allStandards.length > 0 && allStandards.every(v => v === allStandards[0])) sectionStandard = allStandards[0];
-                    const firstVisibleIndex = section.items.findIndex(item => !hiddenQuestions.includes(`${item.id}-${item.t}`));
+                    const firstVisibleIndex = section.items.findIndex(item => !isHiddenItem(item));
+                    const shares = autoFill ? items.filter(item => !isPinned(item)).length : 0;
                     return (
-                      <div key={section.id} className="w-full flex flex-col mb-2">
-                          {section.items.map((itemDef, iIndex) => {
+                      <div key={`${section.id}-${items[0].id}`} className="w-full flex flex-col mb-2" style={{ flex: `${shares} 0 auto` }}>
+                          {items.map((itemDef, cIndex) => {
+                            const iIndex = section.items.indexOf(itemDef);
                             const uniqueId = `${itemDef.id}-${itemDef.t}`;
-                            if (hiddenQuestions.includes(uniqueId)) return null;
-                            const qNum = qNumMap[uniqueId]; const isFirst = (iIndex === firstVisibleIndex); const isLast = (iIndex === section.items.length - 1);
+                            const qNum = qNumMap[uniqueId]; const isFirst = (iIndex === firstVisibleIndex); const isLast = (cIndex === items.length - 1);
                             const renderer = templates[itemDef.t]; const itemState = params[itemDef.id];
                             const update = isPrint ? null : (field, val) => updateParam(itemDef.id, field, val);
                             const itemStd = renderer.standard; const isAbsoluteFirst = (uniqueId === globalFirstVisibleId);
+                            const grows = autoFill && !isPinned(itemDef);
                             return (
-                              <div key={uniqueId} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`}>
+                              <div key={uniqueId} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`} style={{ flex: `${grows ? 1 : 0} 0 auto` }}>
                                 {isAbsoluteFirst && (
                                   <div className="flex flex-col sm:flex-row justify-between items-end border-b-2 border-gray-800 pb-2 mb-6 shrink-0 w-full">
                                     <div className="flex-1 w-full">
@@ -404,8 +471,22 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                     <RubricRenderer mode={rubricMode} isFirstSection={sIndex === 0} customHTML={customRubricHTML} settings={settings} setSettings={setSettings} />
                                   </div>
                                 )}
-                                <div className="flex flex-row w-full gap-4 items-start">
-                                  <div className="flex-1 w-full flex flex-col">
+                                <div className="flex flex-row w-full gap-4 items-stretch" style={{ flex: '1 0 auto' }}>
+                                  <div className="flex-1 w-full flex flex-col relative">
+                                    {/* Editor buttons float above the question so they never change how it wraps (screen matches print). */}
+                                    {!isPrint && (
+                                      <div className="absolute -top-5 left-0 z-30 flex gap-1 print:hidden pointer-events-none group-hover/q:pointer-events-auto">
+                                        {!isPrint && setHiddenQuestions && (
+                                          <button onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200" title="Hide question from test"><EyeOff className="w-3 h-3" /> Hide</button>
+                                        )}
+                                        {!isPrint && !isFirst && toggleItemPageBreak && (
+                                          <button onClick={() => toggleItemPageBreak(itemDef.id)} className={`${itemDef.pageBreak ? 'opacity-100 bg-blue-100 text-blue-700 border-blue-300' : 'opacity-0 group-hover/q:opacity-100 text-gray-500 border-transparent hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200'} transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border`} title="Start a new page before this question (all forms)">📄 {itemDef.pageBreak ? 'New page ON' : 'New page'}</button>
+                                        )}
+                                        {(!isPrint && itemState?.hide_svg) && (
+                                          <button onClick={() => update('hide_svg', false)} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200" title="Restore Image"><Eye className="w-3 h-3" /> Restore Image</button>
+                                        )}
+                                      </div>
+                                    )}
                                     {(!hideStandards && !sectionStandard) && (
                                       <div className="flex justify-end w-full mb-1">
                                         <span className="text-xs font-bold text-gray-400 font-mono">[{itemStd}]</span>
@@ -414,28 +495,12 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                     <div className={`text-gray-900 leading-[1.5] shrink-0 ${questionFontSize}`}>
                                       <div className="flex flex-wrap items-baseline gap-x-2 w-full">
                                          <span className="font-bold text-gray-900 self-start mt-1 mr-1 shrink-0">{qNum}.</span>
-                                         {!isPrint && setHiddenQuestions && (
-                                           <button onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200" title="Hide question from test"><EyeOff className="w-3 h-3" /> Hide</button>
-                                         )}
-                                         {(!isPrint && itemState?.hide_svg) && (
-                                           <button onClick={() => update('hide_svg', false)} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200" title="Restore Image"><Eye className="w-3 h-3" /> Restore Image</button>
-                                         )}
                                          <div className="inline flex-1 min-w-[200px]">
                                            {renderer.q(itemState, update)}
                                          </div>
                                       </div>
                                     </div>
-                                    <div className="relative group/space w-full print:mt-0 border-b border-transparent hover:border-blue-200 transition-colors" style={{ height: `${itemState?.customSpace !== undefined ? itemState.customSpace : (renderer.space * 0.5)}in` }}>
-                                      {!isPrint && (
-                                        <div className="absolute bottom-0 left-0 w-full h-4 translate-y-1/2 cursor-ns-resize flex justify-center items-center opacity-0 group-hover/space:opacity-100 z-20" title="Drag to adjust workspace vertical spacing" onMouseDown={(e) => {
-                                                 e.preventDefault(); const startY = e.clientY; const startSpace = itemState?.customSpace !== undefined ? itemState.customSpace : (renderer.space * 0.5);
-                                                 const onMove = (mEvent) => { update('customSpace', Math.max(0.1, startSpace + ((mEvent.clientY - startY) / 96))); };
-                                                 const onEnd = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onEnd); };
-                                                 document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onEnd); }}>
-                                            <div className="w-1/2 max-w-[200px] h-1.5 bg-blue-300 group-hover/space:bg-blue-500 rounded-full shadow-sm transition-colors"></div>
-                                        </div>
-                                      )}
-                                    </div>
+                                    <Workspace itemState={itemState} renderer={renderer} update={update} isPrint={isPrint} autoFill={autoFill} />
                                   </div>
                                   {(renderer.svg && !itemState?.hide_svg) && (
                                     <div className="shrink-0 w-[240px] h-0 relative z-10 print:w-[200px]">
@@ -451,8 +516,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                       </div>
                     )
                 })}
-             </div>
-         </div>
+         </PageFrame>
       ))}
     </div>
   );
@@ -578,7 +642,7 @@ function App({ config }) {
   const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(['Form A', 'Form B']);
 
   const defaultSettings = {
-    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point',
+    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true,
     customRubricHTML: '<div style="padding: 10px; border: 2px dashed #ccc; text-align: center;">\n  <em>[Insert Custom Rubric HTML Here]</em>\n</div>', questionFontSize: 'text-[11pt]',
     rubricData: {
       hN: "N:", hNDesc: "Not demonstrated", hC: "C:", hCDesc: "Developing", hB: "B:", hBDesc: "Approaching", hAm: "A−:", hAmDesc: "Proficient", hA: "A:", hADesc: "Mastery",
@@ -615,6 +679,8 @@ function App({ config }) {
   const activeFilteredForm = filteredForms.find(f => f.id === activeFormId) || filteredForms[0]; 
   const filteredFormsToPrint = filteredForms.filter(f => selectedFormsToPrint.includes(f.id));
 
+  // Question page breaks match by question number (A_q5, B_q5, ...) so all forms stay parallel.
+  const toggleItemPageBreak = (itemId) => { const num = itemId.split('_')[1]; setForms((forms || []).map(f => ({ ...f, sections: (f.sections || []).map(sec => ({ ...sec, items: (sec.items || []).map(item => item.id.split('_')[1] === num ? { ...item, pageBreak: !item.pageBreak } : item) })) }))); };
   const toggleSectionPageBreak = (sectionId) => setForms((forms || []).map(f => ({ ...f, sections: (f.sections || []).map(sec => sec.id === sectionId ? { ...sec, pageBreak: !sec.pageBreak } : sec) })));
   const updateFormTitle = (newTitle) => setForms((forms || []).map(f => ({ ...f, title: newTitle })));
   const updateCourseTitle = (newCourse) => setForms((forms || []).map(f => ({ ...f, course: newCourse })));
@@ -641,7 +707,7 @@ function App({ config }) {
     const nextCharCode = 65 + (forms || []).length; const letter = String.fromCharCode(nextCharCode);
     setParams(prev => ({ ...prev, ...paramsGenerator(letter) }));
     const baseForm = (forms && forms[0]) ? forms[0] : defaultForms[0];
-    const newForm = { id: `Form ${letter}`, title: baseForm.title, course: baseForm.course, sections: (baseForm.sections || []).map(sec => ({ id: sec.id, title: sec.title, pageBreak: sec.pageBreak, items: (sec.items || []).map(item => ({ id: `${letter}_${item.id.split('_')[1]}`, t: item.t })) })) };
+    const newForm = { id: `Form ${letter}`, title: baseForm.title, course: baseForm.course, sections: (baseForm.sections || []).map(sec => ({ id: sec.id, title: sec.title, pageBreak: sec.pageBreak, items: (sec.items || []).map(item => ({ id: `${letter}_${item.id.split('_')[1]}`, t: item.t, pageBreak: item.pageBreak })) })) };
     setForms([...(forms || []), newForm]); setSelectedFormsToPrint(prev => [...prev, newForm.id]); setActiveFormId(newForm.id);
   };
 
@@ -787,6 +853,7 @@ function App({ config }) {
                         <option value="text-[11pt]">Small (11pt)</option><option value="text-[12pt]">Standard (12pt)</option><option value="text-[14pt]">Large (14pt)</option><option value="text-[16pt]">Extra Large (16pt)</option>
                      </select>
                   </div>
+                  <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.autoFillSpace !== false} onChange={e => setSettings({...settings, autoFillSpace: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Auto-spread workspace to fill each page</span><span className="text-xs text-gray-500">Leftover space on a page is shared evenly by its questions. Drag a question's handle to set its space yourself; double-click the handle to undo.</span></span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.hideStandardsOnStudent} onChange={e => setSettings({...settings, hideStandardsOnStudent: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Hide Standard Codes on Student Tests</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.showFormLabels} onChange={e => setSettings({...settings, showFormLabels: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Show Form Labels (A, B, etc.) on Tests & Keys</span></label>
                   <h4 className="font-bold text-sm text-gray-500 uppercase tracking-wider mt-4">Answer Key Visibility</h4>
@@ -806,7 +873,7 @@ function App({ config }) {
           {activeTab === 'student' && activeFilteredForm && (
             <div className="flex flex-col gap-8 w-full items-center">
               <div className="bg-blue-50 text-blue-800 px-4 py-3 rounded-md border border-blue-200 shadow-sm text-sm flex items-center gap-2 w-[8.5in] max-w-[8.5in]"><Edit3 className="w-4 h-4 shrink-0" /><span><strong>Interactive Mode:</strong> Click dashed text to edit values. <strong>Click a diagram</strong> to open its toolbar. <strong>Drag the blue bar</strong> below questions to adjust spacing.</span></div>
-              <StudentTestView formObj={activeFilteredForm} params={params} updateParam={updateParam} hideStandards={settings.hideStandardsOnStudent} updateFormTitle={updateFormTitle} updateCourseTitle={updateCourseTitle} updateSectionTitle={updateSectionTitle} toggleSectionPageBreak={toggleSectionPageBreak} rubricMode={settings.rubricMode} customRubricHTML={settings.customRubricHTML} questionFontSize={settings.questionFontSize} hiddenQuestions={hiddenQuestions} setHiddenQuestions={setHiddenQuestions} showFormLabels={settings.showFormLabels} settings={settings} setSettings={setSettings} templates={templates} />
+              <StudentTestView formObj={activeFilteredForm} params={params} updateParam={updateParam} hideStandards={settings.hideStandardsOnStudent} updateFormTitle={updateFormTitle} updateCourseTitle={updateCourseTitle} updateSectionTitle={updateSectionTitle} toggleSectionPageBreak={toggleSectionPageBreak} toggleItemPageBreak={toggleItemPageBreak} rubricMode={settings.rubricMode} customRubricHTML={settings.customRubricHTML} questionFontSize={settings.questionFontSize} hiddenQuestions={hiddenQuestions} setHiddenQuestions={setHiddenQuestions} showFormLabels={settings.showFormLabels} settings={settings} setSettings={setSettings} templates={templates} />
             </div>
           )}
           {activeTab === 'student' && !activeFilteredForm && <div className="p-8 text-center text-gray-500 italic bg-white rounded shadow w-[8.5in] mx-auto">No active questions. Check Standards filter.</div>}
