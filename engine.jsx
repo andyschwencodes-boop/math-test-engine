@@ -1,5 +1,5 @@
-// math-test-engine v1.2.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.2.0/engine.jsx
+// math-test-engine v1.3.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.3.0/engine.jsx
 const { useState, useEffect, useRef } = React;
 
 // --- PRINT CSS ---
@@ -649,25 +649,43 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
 function App({ config }) {
   const { standards, paramsGenerator, templates, forms: defaultForms, topicId } = config;
   const localStoragePrefix = `mtg_${topicId}`;
+  // A snapshot baked into the page (the test viewer's "Copy HTML") carries the numbers and edits the
+  // teacher saw: { id, topicId, store: { params: '<json>', ... } }. A snapshot this browser hasn't seen
+  // replaces its saved state once; where storage is blocked (e.g. a sandboxed LMS embed) it's read directly.
+  const snapshot = (window.MTE_SNAPSHOT && window.MTE_SNAPSHOT.topicId === topicId) ? window.MTE_SNAPSHOT : null;
+  const snapshotStore = (snapshot && snapshot.store) || {};
+  const writeSaved = (key, value) => { try { localStorage.setItem(`${localStoragePrefix}_${key}`, value); } catch (e) {} };
+  const readSaved = (key) => {
+    try { const v = localStorage.getItem(`${localStoragePrefix}_${key}`); if (v !== null) return v; } catch (e) {}
+    return snapshotStore[key] !== undefined ? snapshotStore[key] : null;
+  };
+  if (snapshot && snapshot.id) {
+    try {
+      if (readSaved('snapshotId') !== snapshot.id) {
+        Object.entries(snapshotStore).forEach(([key, value]) => { if (/^[A-Za-z]+$/.test(key) && typeof value === 'string') writeSaved(key, value); });
+        writeSaved('snapshotId', snapshot.id);
+      }
+    } catch (e) {}
+  }
 
   const [activeTab, setActiveTab] = useState('student');
-  const [activeFormId, setActiveFormId] = useState(() => localStorage.getItem(`${localStoragePrefix}_activeFormId`) || 'Form A');
+  const [activeFormId, setActiveFormId] = useState(() => readSaved('activeFormId') || 'Form A');
   
   // Bulletproof Local Storage Initializers
   const [forms, setForms] = useState(() => { 
-      try { const saved = localStorage.getItem(`${localStoragePrefix}_forms`); return saved ? JSON.parse(saved) : defaultForms; } 
+      try { const saved = readSaved('forms'); return saved ? JSON.parse(saved) : defaultForms; } 
       catch(e) { return defaultForms; } 
   });
   const [params, setParams] = useState(() => { 
-      try { const saved = localStorage.getItem(`${localStoragePrefix}_params`); return saved ? JSON.parse(saved) : { ...paramsGenerator('A'), ...paramsGenerator('B') }; } 
+      try { const saved = readSaved('params'); return saved ? JSON.parse(saved) : { ...paramsGenerator('A'), ...paramsGenerator('B') }; } 
       catch(e) { return { ...paramsGenerator('A'), ...paramsGenerator('B') }; } 
   });
   const [hiddenQuestions, setHiddenQuestions] = useState(() => { 
-      try { const saved = localStorage.getItem(`${localStoragePrefix}_hiddenQuestions`); return saved ? JSON.parse(saved) : []; } 
+      try { const saved = readSaved('hiddenQuestions'); return saved ? JSON.parse(saved) : []; } 
       catch(e) { return []; } 
   });
   const [disabledStandards, setDisabledStandards] = useState(() => { 
-      try { const saved = localStorage.getItem(`${localStoragePrefix}_disabledStandards`); return saved ? JSON.parse(saved) : []; } 
+      try { const saved = readSaved('disabledStandards'); return saved ? JSON.parse(saved) : []; } 
       catch(e) { return []; } 
   });
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -684,16 +702,16 @@ function App({ config }) {
     }
   };
   const [settings, setSettings] = useState(() => { 
-      try { const saved = localStorage.getItem(`${localStoragePrefix}_settings`); return saved ? { ...defaultSettings, ...JSON.parse(saved), showFormLabels: JSON.parse(saved).showFormLabels !== undefined ? JSON.parse(saved).showFormLabels : true } : defaultSettings; } 
+      try { const saved = readSaved('settings'); return saved ? { ...defaultSettings, ...JSON.parse(saved), showFormLabels: JSON.parse(saved).showFormLabels !== undefined ? JSON.parse(saved).showFormLabels : true } : defaultSettings; } 
       catch(e) { return defaultSettings; } 
   });
 
-  useEffect(() => { localStorage.setItem(`${localStoragePrefix}_forms`, JSON.stringify(forms)); }, [forms]);
-  useEffect(() => { localStorage.setItem(`${localStoragePrefix}_params`, JSON.stringify(params)); }, [params]);
-  useEffect(() => { localStorage.setItem(`${localStoragePrefix}_hiddenQuestions`, JSON.stringify(hiddenQuestions)); }, [hiddenQuestions]);
-  useEffect(() => { localStorage.setItem(`${localStoragePrefix}_disabledStandards`, JSON.stringify(disabledStandards)); }, [disabledStandards]);
-  useEffect(() => { localStorage.setItem(`${localStoragePrefix}_settings`, JSON.stringify(settings)); }, [settings]);
-  useEffect(() => { localStorage.setItem(`${localStoragePrefix}_activeFormId`, activeFormId); }, [activeFormId]);
+  useEffect(() => { writeSaved('forms', JSON.stringify(forms)); }, [forms]);
+  useEffect(() => { writeSaved('params', JSON.stringify(params)); }, [params]);
+  useEffect(() => { writeSaved('hiddenQuestions', JSON.stringify(hiddenQuestions)); }, [hiddenQuestions]);
+  useEffect(() => { writeSaved('disabledStandards', JSON.stringify(disabledStandards)); }, [disabledStandards]);
+  useEffect(() => { writeSaved('settings', JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { writeSaved('activeFormId', activeFormId); }, [activeFormId]);
 
   // Bulletproof mapping function to prevent 'undefined' crashes
   const getFilteredForms = (formsToFilter) => {
@@ -901,7 +919,7 @@ function App({ config }) {
               </div>
               <div className="space-y-4 mt-8 pt-8 border-t border-gray-200">
                 <h3 className="text-lg font-bold text-red-800 bg-red-50 px-3 py-1 rounded">Danger Zone</h3>
-                <button onClick={() => { if(window.confirm('Are you sure you want to reset all application data?')){ localStorage.clear(); window.location.reload(); } }} className="bg-red-100 text-red-700 hover:bg-red-200 font-bold py-2 px-4 rounded transition-colors">Reset Application Data</button>
+                <button onClick={() => { if(window.confirm('Are you sure you want to reset all application data?')){ try { Object.keys(localStorage).filter(k => k.startsWith(`${localStoragePrefix}_`)).forEach(k => localStorage.removeItem(k)); } catch (e) {} window.location.reload(); } }} className="bg-red-100 text-red-700 hover:bg-red-200 font-bold py-2 px-4 rounded transition-colors">Reset Application Data</button>
               </div>
             </div>
           )}
