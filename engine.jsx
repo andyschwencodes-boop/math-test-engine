@@ -1,5 +1,5 @@
-// math-test-engine v1.4.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.4.0/engine.jsx
+// math-test-engine v1.5.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.5.0/engine.jsx
 const { useState, useEffect, useRef } = React;
 
 // --- PRINT CSS ---
@@ -11,6 +11,13 @@ if (!document.getElementById('mte-print-css')) {
   printCss.textContent = `
     @page { size: letter; margin: 0.4in 0; }
     .mte-hide-answer-lines .mte-answer-line { border-bottom-color: transparent !important; }
+    /* Page views (window.MathTestEngine.view): the printed layout, shown as sheets. */
+    .mte-pages { padding: 24px 16px 48px; }
+    .mte-pages .mte-sheets { display: flex; flex-direction: column; align-items: center; gap: 24px; }
+    .mte-tiles .mte-sheets { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start; gap: 28px; }
+    .mte-pages .mte-sheet { margin: 0 !important; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.18), 0 10px 28px rgba(0,0,0,.10); }
+    .mte-tiles .mte-sheet { cursor: zoom-in; }
+    .mte-tiles .mte-sheet:hover { outline: 6px solid #93c5fd; }
     @media print {
       .print-page-break { break-after: page; page-break-after: always; }
       .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
@@ -386,7 +393,7 @@ const PageFrame = ({ isPrint, children }) => {
     if (next !== overflowIn) setOverflowIn(next);
   });
   return (
-    <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.3in 0.4in' : '0.7in 0.4in' }} className={`bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
+    <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.3in 0.4in' : '0.7in 0.4in' }} className={`mte-sheet bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
       {(!isPrint && overflowIn > 0) && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[70] bg-red-600 text-white text-xs font-bold px-3 py-1 rounded shadow whitespace-nowrap print:hidden">
           Page is {overflowIn.toFixed(2)}in too tall and will be cut off when printed. Shrink a workspace or start a new page.
@@ -451,7 +458,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   const isPinned = (item) => params[item.id]?.customSpace !== undefined && params[item.id]?.customSpace !== null;
 
   return (
-    <div className="flex flex-col gap-8 print:gap-0 print:block items-center w-full">
+    <div className="mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full">
       {pages.map((pageChunks, pIndex) => (
          <PageFrame key={pIndex} isPrint={isPrint}>
                 {pageChunks.map(({section, sIndex, items}) => {
@@ -556,20 +563,24 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   );
 };
 
-const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPageBreak, isPrint=false, hiddenQuestions=[], setHiddenQuestions, templates }) => {
+// splitSections (page views only): one sheet per section, with the full key header on the first sheet.
+const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPageBreak, isPrint=false, hiddenQuestions=[], setHiddenQuestions, templates, splitSections=false }) => {
   const qNumMap = {}; let counter = 1;
   formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; } }); });
   const pages = [[]];
   formObj.sections.forEach((section, sIndex) => {
     const hasVisibleItems = section.items.some(item => !hiddenQuestions.includes(`${item.id}-${item.t}`));
     if (!hasVisibleItems && isPrint) return;
-    pages[0].push({ section, sIndex });
+    if (splitSections && pages[pages.length - 1].length) pages.push([]);
+    pages[pages.length - 1].push({ section, sIndex });
   });
 
   return (
-    <div className={`flex flex-col gap-8 print:gap-0 print:block items-center w-full ${isPrint ? 'print-page-break' : ''}`}>
+    <div className={`mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full ${isPrint ? 'print-page-break' : ''}`}>
       {pages.map((pageSections, pIndex) => (
-         <div key={pIndex} style={{ width: '8.5in', padding: '0.4in' }} className={`bg-red-50/20 mx-auto box-border flex flex-col relative ${isPrint ? 'print:min-h-0' : 'shadow-2xl border border-red-200 mb-8 min-h-[11in]'} overflow-hidden`}>
+         <div key={pIndex} style={{ width: '8.5in', padding: '0.4in' }} className={`mte-sheet bg-red-50/20 mx-auto box-border flex flex-col relative ${isPrint ? 'print:min-h-0' : 'shadow-2xl border border-red-200 mb-8 min-h-[11in]'} overflow-hidden`}>
+            {(splitSections && pIndex > 0) && <div className="text-xs font-bold text-red-700 uppercase tracking-widest mb-4">Answer key · {formObj.id}</div>}
+            {(!splitSections || pIndex === 0) && (
             <div className="border-b-4 border-red-800 pb-4 mb-8 shrink-0 print-avoid-break">
               <div className="flex justify-center items-center gap-3">
                  <h1 className="text-3xl font-extrabold text-red-800 uppercase tracking-wide text-center">Teacher Answer Key</h1>
@@ -577,6 +588,7 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
               </div>
               <p className="text-center font-bold text-red-700 mt-2 text-xl"><span dangerouslySetInnerHTML={{ __html: formObj.title }} /></p>
             </div>
+            )}
             <div className="space-y-0 flex flex-col">
               {pageSections.map(({section, sIndex}) => {
                  const firstVisibleIndex = section.items.findIndex(item => !hiddenQuestions.includes(`${item.id}-${item.t}`));
@@ -671,6 +683,12 @@ function App({ config }) {
   }
 
   const [activeTab, setActiveTab] = useState('student');
+  // Page views for embedders such as the test viewer: mode 'edit' (normal editor), 'tiles' (all pages as
+  // thumbnails), or 'scroll' (pages one under another, fit to width). Both page modes show the printed layout.
+  const [view, setView] = useState({ mode: 'edit', form: null, key: false, zoom: 0.3 });
+  const [fitZoom, setFitZoom] = useState(1);
+  const [jumpTo, setJumpTo] = useState(null);
+  const pagesRef = useRef(null);
   const [activeFormId, setActiveFormId] = useState(() => readSaved('activeFormId') || 'Form A');
   
   // Bulletproof Local Storage Initializers
@@ -797,6 +815,35 @@ function App({ config }) {
     return summary;
   };
 
+  useEffect(() => {
+    const prev = window.MathTestEngine.view || {};
+    window.MathTestEngine.view = {
+      set: (next) => setView((v) => ({ ...v, ...next })),
+      get: () => view,
+      forms: () => filteredForms.map((f) => f.id),
+      onChange: prev.onChange || null // set by the embedder; called when the engine changes the view itself
+    };
+  });
+  useEffect(() => {
+    const fit = () => setFitZoom(Math.min(1.25, Math.max(0.3, (window.innerWidth - 48) / (8.5 * 96))));
+    fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit);
+  }, []);
+  useEffect(() => { // after a tile click switches to scroll, bring that page into view
+    if (jumpTo === null || view.mode !== 'scroll' || !pagesRef.current) return;
+    const sheet = pagesRef.current.querySelectorAll('.mte-sheet')[jumpTo];
+    if (sheet) sheet.scrollIntoView({ block: 'start' });
+    setJumpTo(null);
+  }, [jumpTo, view.mode]);
+  const viewForm = filteredForms.find((f) => f.id === view.form) || activeFilteredForm;
+  const pickTile = (e) => {
+    if (view.mode !== 'tiles') return;
+    const sheet = e.target.closest('.mte-sheet'); if (!sheet) return;
+    const i = [...pagesRef.current.querySelectorAll('.mte-sheet')].indexOf(sheet);
+    const next = { ...view, mode: 'scroll' };
+    setView(next); setJumpTo(i);
+    if (window.MathTestEngine.view && window.MathTestEngine.view.onChange) window.MathTestEngine.view.onChange(next);
+  };
+
   return (
     <div className={`min-h-screen bg-gray-100 text-gray-900 font-sans print:bg-white relative print:min-h-0 print:h-auto ${settings.showAnswerLines === false ? 'mte-hide-answer-lines' : ''}`}>
       {showPrintModal && (
@@ -817,6 +864,13 @@ function App({ config }) {
           </div>
         </div>
       )}
+      {view.mode !== 'edit' ? (
+        <div ref={pagesRef} className={`print:hidden mte-pages mte-${view.mode}`} onClick={pickTile} style={{ zoom: view.mode === 'tiles' ? view.zoom : fitZoom }}>
+          {viewForm && (view.key
+            ? <AnswerKeyView formObj={viewForm} params={params} updateParam={updateParam} settings={settings} toggleSectionPageBreak={toggleSectionPageBreak} isPrint={true} hiddenQuestions={hiddenQuestions} templates={templates} splitSections={true} />
+            : <StudentTestView formObj={viewForm} params={params} updateParam={updateParam} hideStandards={settings.hideStandardsOnStudent} updateFormTitle={updateFormTitle} updateCourseTitle={updateCourseTitle} updateSectionTitle={updateSectionTitle} toggleSectionPageBreak={toggleSectionPageBreak} rubricMode={settings.rubricMode} customRubricHTML={settings.customRubricHTML} isPrint={true} questionFontSize={settings.questionFontSize} hiddenQuestions={hiddenQuestions} showFormLabels={settings.showFormLabels} settings={settings} setSettings={setSettings} templates={templates} />)}
+        </div>
+      ) : (
       <div className="print:hidden">
         <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50 mb-8">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -936,6 +990,7 @@ function App({ config }) {
           {activeTab === 'key' && activeFilteredForm && <AnswerKeyView formObj={activeFilteredForm} params={params} updateParam={updateParam} settings={settings} toggleSectionPageBreak={toggleSectionPageBreak} hiddenQuestions={hiddenQuestions} setHiddenQuestions={setHiddenQuestions} templates={templates} />}
         </main>
       </div>
+      )}
 
       <div className="hidden print:block text-black">
         {settings.printSpecs && (
