@@ -1,5 +1,5 @@
-// math-test-engine v1.1.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.1.0/engine.jsx
+// math-test-engine v1.2.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.2.0/engine.jsx
 const { useState, useEffect, useRef } = React;
 
 // --- PRINT CSS ---
@@ -10,6 +10,7 @@ if (!document.getElementById('mte-print-css')) {
   printCss.id = 'mte-print-css';
   printCss.textContent = `
     @page { size: letter; margin: 0.4in 0; }
+    .mte-hide-answer-lines .mte-answer-line { border-bottom-color: transparent !important; }
     @media print {
       .print-page-break { break-after: page; page-break-after: always; }
       .print-avoid-break { break-inside: avoid; page-break-inside: avoid; }
@@ -139,6 +140,34 @@ window.drawAxes = (size, center) => (
 window.E = (field, val) => `\\htmlId{edit_${field}}{\\htmlClass{editable-math}{${val === '' ? '\\phantom{0}' : val}}}`;
 
 // --- GLOBAL COMPONENTS ---
+// Student answer line. Print Settings > "Show answer lines" hides every line but keeps its space.
+// Pass `label` (editable text, needs `field`) or children (e.g. text + MathText) before the line.
+window.AnswerLine = ({ s, u, field, label = '', children }) => (
+  <div className="flex flex-wrap items-end gap-x-2 mt-4">
+    {children !== undefined ? children : (field ? <window.TemplateText s={s} u={u} field={field} defaultText={label} /> : null)}
+    <div className="mte-answer-line flex-1 min-w-[45%] border-b border-slate-400 h-6"></div>
+  </div>
+);
+
+// --- MULTI-PART QUESTIONS ---
+// Parts have stable ids ('a', 'b', ...). Hidden ids live in the item's `hidden_parts`, and partList
+// returns the visible parts re-lettered in order, so q, answer, work, and grading all agree.
+window.partList = (s, ids) => {
+  const hidden = (s && s.hidden_parts) || [];
+  const visible = ids.filter((id) => !hidden.includes(id));
+  return (visible.length ? visible : ids).map((id, i) => ({ id, letter: String.fromCharCode(97 + i) }));
+};
+// One part of a question: prints its letter, and on screen offers "Hide part" while more than one is visible.
+window.Part = ({ s, u, part, parts, label = true, className = '', children }) => (
+  <div className={`relative group/part flex items-baseline ${className}`}>
+    {(u && parts && parts.length > 1) && (
+      <button onClick={() => u('hidden_parts', [...((s && s.hidden_parts) || []), part.id])} className="absolute -top-5 right-0 z-30 opacity-0 pointer-events-none group-hover/part:opacity-100 group-hover/part:pointer-events-auto transition-opacity px-1.5 py-0.5 text-[10px] font-bold text-gray-500 bg-white hover:text-red-600 hover:bg-red-50 rounded border border-gray-200 hover:border-red-200 print:hidden" title="Hide this part on every form. The remaining parts are re-lettered and the answer key updates.">Hide part {part.letter}</button>
+    )}
+    {label && <span className="mr-1 shrink-0">{part.letter}.</span>}
+    <div className="flex-1 min-w-0">{children}</div>
+  </div>
+);
+
 window.TemplateText = ({ s, u, field, defaultText }) => {
   const val = s[field] !== undefined ? s[field] : defaultText;
   const [tempVal, setTempVal] = useState(val);
@@ -482,6 +511,9 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                         {!isPrint && !isFirst && toggleItemPageBreak && (
                                           <button onClick={() => toggleItemPageBreak(itemDef.id)} className={`${itemDef.pageBreak ? 'opacity-100 bg-blue-100 text-blue-700 border-blue-300' : 'opacity-0 group-hover/q:opacity-100 text-gray-500 border-transparent hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200'} transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border`} title="Start a new page before this question (all forms)">📄 {itemDef.pageBreak ? 'New page ON' : 'New page'}</button>
                                         )}
+                                        {(!isPrint && itemState?.hidden_parts?.length > 0) && (
+                                          <button onClick={() => update('hidden_parts', [])} className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" title="Show all parts of this question again (all forms)"><Eye className="w-3 h-3" /> Restore {itemState.hidden_parts.length} hidden part{itemState.hidden_parts.length > 1 ? 's' : ''}</button>
+                                        )}
                                         {(!isPrint && itemState?.hide_svg) && (
                                           <button onClick={() => update('hide_svg', false)} className="opacity-0 group-hover/q:opacity-100 transition-opacity inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200" title="Restore Image"><Eye className="w-3 h-3" /> Restore Image</button>
                                         )}
@@ -595,7 +627,7 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
                                      {!settings.keyShowQuestion && <span className="font-bold text-red-800 absolute -ml-6">{qNum}.</span>}
                                      {settings.keyShowWork && renderer.work && <div className={`text-red-800 leading-[1.6] text-[11pt] mb-3 overflow-x-auto`}>{renderer.work(itemState)}</div>}
                                      {settings.keyShowAnswer && renderer.answer && <div className="font-bold text-red-700 leading-[1.6] text-[14pt] mb-2 overflow-x-auto">{renderer.answer(itemState)}</div>}
-                                     {settings.keyShowGrading && renderer.grading && <div className="mt-4 pt-3 border-t border-red-200 text-[10pt] text-red-600 font-sans italic flex items-start gap-2"><CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /><span><strong>Grading Note:</strong> {renderer.grading}</span></div>}
+                                     {settings.keyShowGrading && renderer.grading && <div className="mt-4 pt-3 border-t border-red-200 text-[10pt] text-red-600 font-sans italic flex items-start gap-2"><CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /><span><strong>Grading Note:</strong> {typeof renderer.grading === 'function' ? renderer.grading(itemState) : renderer.grading}</span></div>}
                                   </div>
                                 )}
                                 <div className="w-full flex-1"></div>
@@ -642,7 +674,7 @@ function App({ config }) {
   const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(['Form A', 'Form B']);
 
   const defaultSettings = {
-    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true,
+    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true,
     customRubricHTML: '<div style="padding: 10px; border: 2px dashed #ccc; text-align: center;">\n  <em>[Insert Custom Rubric HTML Here]</em>\n</div>', questionFontSize: 'text-[11pt]',
     rubricData: {
       hN: "N:", hNDesc: "Not demonstrated", hC: "C:", hCDesc: "Developing", hB: "B:", hBDesc: "Approaching", hAm: "A−:", hAmDesc: "Proficient", hA: "A:", hADesc: "Mastery",
@@ -695,9 +727,12 @@ function App({ config }) {
         return next;
       }
       next[id] = { ...next[id], [field]: value };
-      if (field.endsWith('_dx') || field.endsWith('_dy') || field.endsWith('_scale') || field.endsWith('_rotYaw') || field.endsWith('_rotPitch') || field.endsWith('_dock')) {
+      // Hidden parts and diagram visuals apply to the same question on every form (A_q5, B_q5, ...).
+      // Compare the whole question number so q1 doesn't also match q10-q19.
+      if (field === 'hidden_parts' || field.endsWith('_dx') || field.endsWith('_dy') || field.endsWith('_scale') || field.endsWith('_rotYaw') || field.endsWith('_rotPitch') || field.endsWith('_dock')) {
+        const num = id.split('_')[1];
         const match = id.match(/([a-zA-Z]+)(\d+)/) || id.match(/([a-zA-Z]+)([A-Z][a-z]+)/);
-        if (match) Object.keys(next).forEach(key => { if (key !== id && key.includes(match[2])) next[key] = { ...next[key], [field]: value }; });
+        Object.keys(next).forEach(key => { if (key !== id && (num !== undefined ? key.split('_')[1] === num : match && key.includes(match[2]))) next[key] = { ...next[key], [field]: value }; });
       }
       return next;
     });
@@ -743,7 +778,7 @@ function App({ config }) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-sans print:bg-white relative print:min-h-0 print:h-auto">
+    <div className={`min-h-screen bg-gray-100 text-gray-900 font-sans print:bg-white relative print:min-h-0 print:h-auto ${settings.showAnswerLines === false ? 'mte-hide-answer-lines' : ''}`}>
       {showPrintModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
           <div className="bg-white p-8 rounded-xl shadow-2xl max-w-lg w-full text-center relative animate-in fade-in zoom-in duration-200">
@@ -853,6 +888,7 @@ function App({ config }) {
                         <option value="text-[11pt]">Small (11pt)</option><option value="text-[12pt]">Standard (12pt)</option><option value="text-[14pt]">Large (14pt)</option><option value="text-[16pt]">Extra Large (16pt)</option>
                      </select>
                   </div>
+                  <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.showAnswerLines !== false} onChange={e => setSettings({...settings, showAnswerLines: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Show answer lines</span><span className="text-xs text-gray-500">Turn off for open work space: the lines disappear but their room stays, so pages don't shift.</span></span></label>
                   <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.autoFillSpace !== false} onChange={e => setSettings({...settings, autoFillSpace: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Auto-spread workspace to fill each page</span><span className="text-xs text-gray-500">Leftover space on a page is shared evenly by its questions. Drag a question's handle to set its space yourself; double-click the handle to undo.</span></span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.hideStandardsOnStudent} onChange={e => setSettings({...settings, hideStandardsOnStudent: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Hide Standard Codes on Student Tests</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.showFormLabels} onChange={e => setSettings({...settings, showFormLabels: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Show Form Labels (A, B, etc.) on Tests & Keys</span></label>
