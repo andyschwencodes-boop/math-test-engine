@@ -1,5 +1,5 @@
-// math-test-engine v1.6.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.6.0/engine.jsx
+// math-test-engine v1.7.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.7.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
