@@ -1,0 +1,44 @@
+# Publishes a release automatically when engine.jsx's version line changes on main.
+# Tests load the engine from jsDelivr pinned to a release tag (math-test-engine@vX.Y.Z), so every new
+# version needs a release. This tags the exact commit that introduced the version, so a release can't
+# point at older code, and it fails if engine.jsx changes without a version bump.
+name: Release engine
+
+on:
+  push:
+    branches: [main]
+    paths: ['engine.jsx']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Read version from engine.jsx
+        id: v
+        run: |
+          V=$(head -1 engine.jsx | sed -n 's#^// math-test-engine \(v[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)$#\1#p')
+          if [ -z "$V" ]; then echo "::error::engine.jsx must start with '// math-test-engine vX.Y.Z'"; exit 1; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+      - name: Release the new version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$V" >/dev/null; then
+            if git diff --quiet "$V" HEAD -- engine.jsx; then echo "$V is already released with this code. Nothing to do."; exit 0; fi
+            echo "::error::engine.jsx changed but its version is still $V, which is already released. Bump the version on line 1 (tests pinned to $V must never change)."
+            exit 1
+          fi
+          LATEST=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -n "$LATEST" ] && [ "$(printf '%s\n%s\n' "$LATEST" "$V" | sort -V | tail -1)" != "$V" ]; then
+            echo "::error::$V is older than the latest release $LATEST."; exit 1
+          fi
+          gh release create "$V" --target "$GITHUB_SHA" --title "$V" --notes "$(git log -1 --format=%B "$GITHUB_SHA")"
+          echo "Released $V at $GITHUB_SHA."
