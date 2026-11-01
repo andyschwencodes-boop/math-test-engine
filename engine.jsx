@@ -11,6 +11,8 @@ if (!document.getElementById('mte-print-css')) {
   printCss.textContent = `
     @page { size: letter; margin: 0.4in 0; }
     .mte-hide-answer-lines .mte-answer-line { border-bottom-color: transparent !important; }
+    /* A teacher's part spacing (params.part_gap) overrides the template's gap between rows of parts. */
+    [data-mte-pgap] .grid:has(> .group\\/part) { row-gap: var(--mte-part-gap) !important; }
     /* The print copy is laid out off screen (not display:none) so its pages can measure and fit themselves. */
     @media screen { .mte-print-root { position: absolute; left: -100000px; top: 0; width: 8.5in; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; } }
     /* Page views (window.MathTestEngine.view): the printed layout, shown as sheets. */
@@ -169,9 +171,10 @@ window.partList = (s, ids) => {
 // One part of a question: prints its letter, and on screen offers "Hide part" while more than one is visible.
 // The button sits inside the part's box so moving onto it keeps the part hovered.
 window.Part = ({ s, u, part, parts, label = true, className = '', children }) => (
-  <div className={`relative group/part flex items-baseline ${className}`}>
+  // -ml-6/pl-6 widen the hover area to the left (no visual shift) so the hide icon there stays clickable.
+  <div className={`relative group/part flex items-baseline -ml-6 pl-6 ${className}`}>
     {(u && parts && parts.length > 1) && (
-      <button onClick={() => u('hidden_parts', [...((s && s.hidden_parts) || []), part.id])} className="absolute top-0 right-0 z-30 invisible group-hover/part:visible bg-white shadow-sm px-1.5 py-0.5 text-[10px] font-bold text-gray-500 bg-white hover:text-red-600 hover:bg-red-50 rounded border border-gray-200 hover:border-red-200 print:hidden" title="Hide this part on every form. The remaining parts are re-lettered and the answer key updates.">Hide part {part.letter}</button>
+      <button onClick={() => u('hidden_parts', [...((s && s.hidden_parts) || []), part.id])} className="absolute left-0 top-0.5 z-30 invisible group-hover/part:visible w-5 h-5 inline-flex items-center justify-center rounded border border-gray-200 bg-white text-gray-500 hover:text-red-600 hover:bg-red-50 hover:border-red-200 shadow-sm print:hidden" title={`Hide part ${part.letter} on every form. The remaining parts are re-lettered and the answer key updates.`} aria-label={`Hide part ${part.letter}`}><EyeOff className="w-3 h-3" /></button>
     )}
     {label && <span className="mr-1 shrink-0">{part.letter}.</span>}
     <div className="flex-1 min-w-0">{children}</div>
@@ -469,6 +472,41 @@ const Workspace = ({ itemState, renderer, update, isPrint, autoFill }) => {
   );
 };
 
+// Editor tools for one question, stacked under its number so they never cover question text.
+// Hover-only tools appear while the question is hovered; tools showing a non-default state stay visible.
+const ToolBtn = ({ onClick, title, tone = 'plain', always = false, children }) => {
+  const tones = { plain: 'bg-white text-gray-500 border-gray-200 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-200', danger: 'bg-white text-gray-500 border-gray-200 hover:text-red-600 hover:bg-red-50 hover:border-red-200', on: 'bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200', warn: 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100' };
+  return <button type="button" onClick={onClick} title={title} aria-label={title} className={`${always ? 'visible' : ''} w-6 h-6 inline-flex items-center justify-center rounded border shadow-sm text-[11px] font-bold leading-none ${tones[tone]}`}>{children}</button>;
+};
+const GapIcon = ({ out }) => (
+  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    {out ? <><path d="M12 3v6M9 6l3-3 3 3"/><path d="M12 21v-6M9 18l3 3 3-3"/></> : <><path d="M12 3v6M9 6l3 3 3-3"/><path d="M12 21v-6M9 18l3-3 3 3"/></>}
+    <line x1="4" y1="12" x2="20" y2="12" />
+  </svg>
+);
+const QuestionTools = ({ isFirst, itemDef, itemState, update, uniqueId, setHiddenQuestions, toggleItemPageBreak }) => {
+  const ref = useRef(null);
+  const [hasParts, setHasParts] = useState(false);
+  const partGrid = () => { const q = ref.current && ref.current.closest('.group\\/q'); return q && q.querySelector('.grid:has(> .group\\/part)'); };
+  useEffect(() => { setHasParts(!!partGrid()); });
+  const custom = typeof itemState?.part_gap === 'number';
+  const stepGap = (delta) => {
+    const g = partGrid(); const now = custom ? itemState.part_gap : (g ? parseFloat(getComputedStyle(g).rowGap) || 0 : 0) / 96;
+    update('part_gap', Math.max(0, Math.min(2, Math.round((now + delta) * 20) / 20)));
+  };
+  return (
+    <div ref={ref} className="absolute left-0 top-full mt-1 z-30 flex flex-col gap-1 invisible group-hover/q:visible print:hidden">
+      {setHiddenQuestions && <ToolBtn tone="danger" title="Hide this question from the test" onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])}><EyeOff className="w-3.5 h-3.5" /></ToolBtn>}
+      {(!isFirst && toggleItemPageBreak) && <ToolBtn tone={itemDef.pageBreak ? 'on' : 'plain'} always={itemDef.pageBreak} title={itemDef.pageBreak ? 'New page before this question: ON (all forms). Click to turn off.' : 'Start a new page before this question (all forms)'} onClick={() => toggleItemPageBreak(itemDef.id)}><FileText className="w-3.5 h-3.5" /></ToolBtn>}
+      {itemState?.hidden_parts?.length > 0 && <ToolBtn tone="warn" always title={`Restore ${itemState.hidden_parts.length} hidden part${itemState.hidden_parts.length > 1 ? 's' : ''} (all forms)`} onClick={() => update('hidden_parts', [])}><Eye className="w-3.5 h-3.5" /></ToolBtn>}
+      {itemState?.hide_svg && <ToolBtn title="Restore the diagram" onClick={() => update('hide_svg', false)}><Eye className="w-3.5 h-3.5" /></ToolBtn>}
+      {hasParts && <ToolBtn title="Less space between parts (all forms)" onClick={() => stepGap(-0.1)}><GapIcon out={false} /></ToolBtn>}
+      {hasParts && <ToolBtn title="More space between parts (all forms)" onClick={() => stepGap(0.1)}><GapIcon out /></ToolBtn>}
+      {(hasParts && custom) && <ToolBtn tone="warn" always title={`Part spacing set to ${itemState.part_gap.toFixed(2)}in. Click to go back to the default.`} onClick={() => update('part_gap', null)}><RotateCcw className="w-3 h-3" /></ToolBtn>}
+    </div>
+  );
+};
+
 const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFormTitle, updateCourseTitle, updateSectionTitle, toggleSectionPageBreak, toggleItemPageBreak, rubricMode, customRubricHTML, isPrint=false, questionFontSize="text-[12pt]", hiddenQuestions=[], setHiddenQuestions, showFormLabels=true, settings, setSettings, templates }) => {
   const autoFill = settings?.autoFillSpace !== false;
   const isHiddenItem = (item) => hiddenQuestions.includes(`${item.id}-${item.t}`);
@@ -516,15 +554,15 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                             return (
                               <div key={uniqueId} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`} style={{ flex: `${grows ? 1 : 0} 0 auto` }}>
                                 {isAbsoluteFirst && (
-                                  <div className="flex flex-col sm:flex-row justify-between items-end border-b-2 border-gray-800 pb-2 mb-3 shrink-0 w-full">
-                                    <div className="flex-1 w-full">
-                                      {showFormLabels && <div className="inline-block bg-gray-200 text-gray-700 font-bold px-3 py-0.5 rounded-sm text-xs tracking-widest mb-2 uppercase">{formObj.id}</div>}
-                                      <h1 className="text-2xl font-extrabold text-gray-900 uppercase tracking-wide"><window.GlobalEditableText val={formObj.title} onChange={(val) => !isPrint && updateFormTitle(val)} /></h1>
-                                      <p className="text-gray-600 font-medium mt-1 text-base"><window.GlobalEditableText val={formObj.course} onChange={(val) => !isPrint && updateCourseTitle(val)} /></p>
+                                  <div className="border-b-2 border-gray-800 pb-2 mb-3 shrink-0 w-full">
+                                    <div className="flex items-baseline gap-3 w-full">
+                                      {showFormLabels && <span className="shrink-0 bg-gray-200 text-gray-700 font-bold px-2.5 py-0.5 rounded-sm text-xs tracking-widest uppercase">{formObj.id}</span>}
+                                      <h1 className="flex-1 min-w-0 text-xl font-extrabold text-gray-900 uppercase tracking-wide leading-tight"><window.GlobalEditableText val={formObj.title} onChange={(val) => !isPrint && updateFormTitle(val)} /></h1>
                                     </div>
-                                    <div className="flex flex-col gap-2 w-full sm:w-56 shrink-0 mt-4 sm:mt-0">
-                                      <div className="flex items-end"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Name:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
-                                      <div className="flex items-end"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Date:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
+                                    <div className="flex items-end gap-6 w-full mt-2">
+                                      <p className="flex-1 min-w-0 text-gray-600 font-medium text-sm"><window.GlobalEditableText val={formObj.course} onChange={(val) => !isPrint && updateCourseTitle(val)} /></p>
+                                      <div className="flex items-end w-60 shrink-0"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Name:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
+                                      <div className="flex items-end w-36 shrink-0"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Date:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
                                     </div>
                                   </div>
                                 )}
@@ -545,25 +583,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                   </div>
                                 )}
                                 <div className="flex flex-row w-full gap-4 items-stretch" style={{ flex: '1 0 auto' }}>
-                                  <div className="flex-1 w-full flex flex-col relative">
-                                    {/* Editor buttons overlay the top-right of the question (inside its box, so moving onto them keeps the
-                                        question hovered) and never change how it wraps (screen matches print). Hidden ones can't be clicked. */}
-                                    {!isPrint && (
-                                      <div className="absolute top-0 right-0 z-30 flex gap-1 print:hidden invisible group-hover/q:visible">
-                                        {!isPrint && setHiddenQuestions && (
-                                          <button onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])} className="inline-flex bg-white shadow-sm items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200" title="Hide question from test"><EyeOff className="w-3 h-3" /> Hide</button>
-                                        )}
-                                        {!isPrint && !isFirst && toggleItemPageBreak && (
-                                          <button onClick={() => toggleItemPageBreak(itemDef.id)} className={`${itemDef.pageBreak ? 'visible bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200' : 'bg-white shadow-sm text-gray-500 border-gray-200 hover:text-blue-600 hover:bg-blue-50 hover:border-blue-200'} inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border`} title="Start a new page before this question (all forms)">📄 {itemDef.pageBreak ? 'New page ON' : 'New page'}</button>
-                                        )}
-                                        {(!isPrint && itemState?.hidden_parts?.length > 0) && (
-                                          <button onClick={() => update('hidden_parts', [])} className="visible inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100" title="Show all parts of this question again (all forms)"><Eye className="w-3 h-3" /> Restore {itemState.hidden_parts.length} hidden part{itemState.hidden_parts.length > 1 ? 's' : ''}</button>
-                                        )}
-                                        {(!isPrint && itemState?.hide_svg) && (
-                                          <button onClick={() => update('hide_svg', false)} className="inline-flex bg-white shadow-sm items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded border border-transparent hover:border-blue-200" title="Restore Image"><Eye className="w-3 h-3" /> Restore Image</button>
-                                        )}
-                                      </div>
-                                    )}
+                                  <div className="flex-1 w-full flex flex-col relative" {...(typeof itemState?.part_gap === 'number' ? { 'data-mte-pgap': '', style: { '--mte-part-gap': `${itemState.part_gap}in` } } : {})}>
                                     {(!hideStandards && !sectionStandard) && (
                                       <div className="flex justify-end w-full mb-1">
                                         <span className="text-xs font-bold text-gray-400 font-mono">[{itemStd}]</span>
@@ -571,7 +591,10 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                     )}
                                     <div className={`text-gray-900 leading-[1.5] shrink-0 ${questionFontSize}`}>
                                       <div className="flex flex-wrap items-baseline gap-x-2 w-full">
-                                         <span className="font-bold text-gray-900 self-start mt-1 mr-1 shrink-0">{qNum}.</span>
+                                         <div className="relative self-start mt-1 mr-1 shrink-0 min-w-[1.6rem]">
+                                           <span className="font-bold text-gray-900">{qNum}.</span>
+                                           {!isPrint && <QuestionTools isFirst={isFirst} itemDef={itemDef} itemState={itemState} update={update} uniqueId={uniqueId} setHiddenQuestions={setHiddenQuestions} toggleItemPageBreak={toggleItemPageBreak} />}
+                                         </div>
                                          <div className="inline flex-1 min-w-[200px]">
                                            {renderer.q(itemState, update)}
                                          </div>
@@ -803,7 +826,7 @@ function App({ config }) {
       next[id] = { ...next[id], [field]: value };
       // Hidden parts and diagram visuals apply to the same question on every form (A_q5, B_q5, ...).
       // Compare the whole question number so q1 doesn't also match q10-q19.
-      if (field === 'hidden_parts' || field.endsWith('_dx') || field.endsWith('_dy') || field.endsWith('_scale') || field.endsWith('_rotYaw') || field.endsWith('_rotPitch') || field.endsWith('_dock')) {
+      if (field === 'hidden_parts' || field === 'part_gap' || field.endsWith('_dx') || field.endsWith('_dy') || field.endsWith('_scale') || field.endsWith('_rotYaw') || field.endsWith('_rotPitch') || field.endsWith('_dock')) {
         const num = id.split('_')[1];
         const match = id.match(/([a-zA-Z]+)(\d+)/) || id.match(/([a-zA-Z]+)([A-Z][a-z]+)/);
         Object.keys(next).forEach(key => { if (key !== id && (num !== undefined ? key.split('_')[1] === num : match && key.includes(match[2]))) next[key] = { ...next[key], [field]: value }; });
