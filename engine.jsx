@@ -1,6 +1,6 @@
-// math-test-engine v1.5.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.5.0/engine.jsx
-const { useState, useEffect, useRef } = React;
+// math-test-engine v1.6.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.6.0/engine.jsx
+const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
 // Print pages are 8.5in x 10.2in; 0.4in top/bottom @page margins fit exactly one per Letter sheet.
@@ -11,6 +11,8 @@ if (!document.getElementById('mte-print-css')) {
   printCss.textContent = `
     @page { size: letter; margin: 0.4in 0; }
     .mte-hide-answer-lines .mte-answer-line { border-bottom-color: transparent !important; }
+    /* The print copy is laid out off screen (not display:none) so its pages can measure and fit themselves. */
+    @media screen { .mte-print-root { position: absolute; left: -100000px; top: 0; width: 8.5in; height: 0; overflow: hidden; visibility: hidden; pointer-events: none; } }
     /* Page views (window.MathTestEngine.view): the printed layout, shown as sheets. */
     .mte-pages { padding: 24px 16px 48px; }
     .mte-pages .mte-sheets { display: flex; flex-direction: column; align-items: center; gap: 24px; }
@@ -382,16 +384,47 @@ const RubricRenderer = ({ mode, isFirstSection, customHTML, settings, setSetting
 // Content area is 9.6in tall both on screen (11in sheet, 0.7in top/bottom padding) and in print
 // (10.2in page inside 0.4in @page margins, 0.3in top/bottom padding), so what fits in the preview fits on paper.
 const PAGE_DPI = 96;
+// How much of each automatic workspace's minimum a page can afford (1 = all of it, 0 = none).
+const PageSqueeze = createContext(1);
 const PageFrame = ({ isPrint, children }) => {
   const bodyRef = useRef(null);
   const [overflowIn, setOverflowIn] = useState(0);
-  useEffect(() => { // screen only: warn when content is taller than the printable area
-    if (isPrint || !bodyRef.current) return;
-    const el = bodyRef.current;
-    const over = Math.round(((el.scrollHeight - el.clientHeight) / PAGE_DPI) * 100) / 100;
-    const next = over > 0.02 ? over : 0;
-    if (next !== overflowIn) setOverflowIn(next);
+  const [squeeze, setSqueeze] = useState(1);
+  const [, remeasure] = useState(0);
+  const regrows = useRef(0); // safety stop: a page gives room back at most a few times
+  // Fit the page before it paints: if content is too tall (fonts, browser, or OS differences), shrink this
+  // page's automatic workspaces just enough; give the room back when it frees up. Pinned workspaces never change.
+  useLayoutEffect(() => {
+    const el = bodyRef.current; if (!el) return;
+    const ws = [...el.querySelectorAll('[data-mte-ws="auto"]')];
+    const baseMin = ws.reduce((sum, w) => sum + parseFloat(w.dataset.min || '0'), 0);
+    const over = el.scrollHeight - el.clientHeight;
+    // Shrink to leave 6px spare; only give room back when more than 12px is free, so it can't flip-flop.
+    let next = squeeze;
+    if (baseMin > 0 && over > 0.5) next = Math.max(0, squeeze - (over + 6) / baseMin);
+    else if (baseMin > 0 && squeeze < 1 && regrows.current < 4) {
+      const used = Math.max(0, ...[...el.children].map((c) => c.offsetTop + c.offsetHeight + (parseFloat(getComputedStyle(c).marginBottom) || 0))) - el.offsetTop;
+      const grown = ws.reduce((sum, w) => sum + w.clientHeight, 0) - baseMin * squeeze; // clientHeight: no border
+      const room = Math.max(0, el.clientHeight - used) + Math.max(0, grown);
+      if (room > 12) { next = Math.min(1, squeeze + (room - 6) / baseMin); regrows.current += 1; }
+    }
+    next = Math.round(next * 1000) / 1000;
+    if (Math.abs(next - squeeze) > 0.002) { setSqueeze(next); return; }
+    if (!isPrint) { // screen only: warn when the page still can't fit (pinned space, or too much content)
+      const overIn = Math.round((over / PAGE_DPI) * 100) / 100;
+      const flag = overIn > 0.02 ? overIn : 0;
+      if (flag !== overflowIn) setOverflowIn(flag);
+    }
   });
+  useEffect(() => { // re-fit after web fonts load and whenever the page's content changes size
+    const el = bodyRef.current; if (!el) return;
+    let cancelled = false; const bump = () => { if (!cancelled) remeasure((n) => n + 1); };
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(bump);
+    if (typeof ResizeObserver === 'undefined') return () => { cancelled = true; };
+    const ro = new ResizeObserver(bump);
+    [...el.children].forEach((c) => ro.observe(c));
+    return () => { cancelled = true; ro.disconnect(); };
+  }, []);
   return (
     <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.3in 0.4in' : '0.7in 0.4in' }} className={`mte-sheet bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
       {(!isPrint && overflowIn > 0) && (
@@ -399,22 +432,25 @@ const PageFrame = ({ isPrint, children }) => {
           Page is {overflowIn.toFixed(2)}in too tall and will be cut off when printed. Shrink a workspace or start a new page.
         </div>
       )}
-      <div ref={bodyRef} className="flex flex-col flex-1 min-h-0">{children}</div>
+      <PageSqueeze.Provider value={squeeze}>
+        <div ref={bodyRef} className="flex flex-col flex-1 min-h-0">{children}</div>
+      </PageSqueeze.Provider>
     </div>
   );
 };
 
-// Workspace below a question. Auto: at least the template's `space`, plus an equal share of the page's
-// leftover height (when Auto-spread is on). Dragging pins an exact height (customSpace, may be 0);
-// double-clicking the handle returns to auto.
+// Workspace below a question. Auto: at least the template's `space` (scaled down by the page's squeeze if the
+// page would otherwise overflow), plus an equal share of the page's leftover height (when Auto-spread is on).
+// Dragging pins an exact height (customSpace, may be 0); double-clicking the handle returns to auto.
 const Workspace = ({ itemState, renderer, update, isPrint, autoFill }) => {
   const ref = useRef(null);
+  const squeeze = useContext(PageSqueeze);
   const minIn = (renderer.space || 0) * 0.5;
   const pinned = itemState?.customSpace !== undefined && itemState?.customSpace !== null;
   const style = pinned ? { height: `${itemState.customSpace}in`, flex: '0 0 auto' }
-    : { minHeight: `${minIn}in`, flex: autoFill ? '1 0 auto' : '0 0 auto' };
+    : { minHeight: `${minIn * squeeze}in`, flex: autoFill ? '1 0 auto' : '0 0 auto' };
   return (
-    <div ref={ref} className="relative w-full border-b border-transparent hover:border-blue-200 transition-colors" style={style}>
+    <div ref={ref} data-mte-ws={pinned ? 'pinned' : 'auto'} data-min={minIn * PAGE_DPI} className="relative w-full border-b border-transparent hover:border-blue-200 transition-colors" style={style}>
       {!isPrint && (
         <div className="absolute bottom-0 left-0 w-full h-4 translate-y-1/2 cursor-ns-resize flex justify-center items-center opacity-0 group-hover/q:opacity-100 z-20 print:hidden"
           title="Drag to set this question's workspace. Double-click to return to auto spacing."
@@ -992,7 +1028,7 @@ function App({ config }) {
       </div>
       )}
 
-      <div className="hidden print:block text-black">
+      <div className="mte-print-root text-black">
         {settings.printSpecs && (
           <div className="p-10 w-[8.5in] h-[10.2in] mx-auto print-page-break box-border">
             <div className="border-b-4 border-gray-800 pb-4 mb-8">
