@@ -1,5 +1,5 @@
-// math-test-engine v1.7.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.7.0/engine.jsx
+// math-test-engine v1.8.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.8.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -389,7 +389,7 @@ const RubricRenderer = ({ mode, isFirstSection, customHTML, settings, setSetting
 const PAGE_DPI = 96;
 // How much of each automatic workspace's minimum a page can afford (1 = all of it, 0 = none).
 const PageSqueeze = createContext(1);
-const PageFrame = ({ isPrint, children }) => {
+const PageFrame = ({ isPrint, children, onOverflow, autoNote }) => {
   const bodyRef = useRef(null);
   const [overflowIn, setOverflowIn] = useState(0);
   const [squeeze, setSqueeze] = useState(1);
@@ -413,6 +413,13 @@ const PageFrame = ({ isPrint, children }) => {
     }
     next = Math.round(next * 1000) / 1000;
     if (Math.abs(next - squeeze) > 0.002) { setSqueeze(next); return; }
+    // Still too tall with no automatic workspace left: move the first question that runs past the bottom
+    // (and everything after it) to a new page. The first question on a page can't move, so that case warns.
+    if (over > 0.5 && onOverflow) {
+      const items = [...el.querySelectorAll('[data-mte-item]')];
+      const spill = items.find((it, i) => i > 0 && it.offsetTop - el.offsetTop + it.offsetHeight > el.clientHeight + 0.5);
+      if (spill) { onOverflow(spill.dataset.mteItem); return; }
+    }
     if (!isPrint) { // screen only: warn when the page still can't fit (pinned space, or too much content)
       const overIn = Math.round((over / PAGE_DPI) * 100) / 100;
       const flag = overIn > 0.02 ? overIn : 0;
@@ -430,6 +437,7 @@ const PageFrame = ({ isPrint, children }) => {
   }, []);
   return (
     <div style={{ width: '8.5in', height: isPrint ? '10.2in' : '11in', padding: isPrint ? '0.3in 0.4in' : '0.7in 0.4in' }} className={`mte-sheet bg-white mx-auto box-border flex flex-col relative ${isPrint ? 'print-page-break overflow-hidden' : `shadow-2xl border mb-12 overflow-visible ${overflowIn ? 'border-red-500 ring-4 ring-red-200' : 'border-gray-300'}`}`}>
+      {(!isPrint && autoNote) && <div className="absolute top-2 right-4 text-[10px] text-gray-400 italic print:hidden" title="The previous page was too full, so these questions moved here. Changes to the test recalculate this.">Page added automatically so everything fits</div>}
       {(!isPrint && overflowIn > 0) && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[70] bg-red-600 text-white text-xs font-bold px-3 py-1 rounded shadow whitespace-nowrap print:hidden">
           Page is {overflowIn.toFixed(2)}in too tall and will be cut off when printed. Shrink a workspace or start a new page.
@@ -513,6 +521,16 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   const qNumMap = {}; let counter = 1; let globalFirstVisibleId = null;
   formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; if (!globalFirstVisibleId) globalFirstVisibleId = uniqueId; } }); });
 
+  // Automatic page breaks (ids of questions that start a page because the page before couldn't fit them).
+  // They belong to one layout: anything that can change heights gives a new signature and starts over.
+  const layoutSig = JSON.stringify([
+    formObj.sections.map((sec) => [sec.id, sec.pageBreak, sec.items.map((i) => [i.id, i.t, !!i.pageBreak, params[i.id]])]),
+    hiddenQuestions, questionFontSize, rubricMode, customRubricHTML, showFormLabels, hideStandards, settings && settings.autoFillSpace
+  ]);
+  const [auto, setAuto] = useState({ sig: '', ids: [] });
+  const autoIds = auto.sig === layoutSig ? auto.ids : [];
+  const addAutoBreak = (id) => setAuto((a) => { const ids = a.sig === layoutSig ? a.ids : []; return ids.includes(id) ? a : { sig: layoutSig, ids: [...ids, id] }; });
+
   // Pages are lists of chunks { section, sIndex, items }. A page starts before a section with pageBreak,
   // or before any later question in a section whose item has pageBreak.
   const pages = []; let page = [];
@@ -521,8 +539,9 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
     if (!visible.length) return;
     let chunk = null;
     visible.forEach((item, vIndex) => {
-      const breakHere = vIndex === 0 ? section.pageBreak : item.pageBreak;
-      if (breakHere && (page.length > 0 || chunk)) { if (chunk) page.push(chunk); pages.push(page); page = []; chunk = null; }
+      const autoBreak = autoIds.includes(item.id);
+      const breakHere = (vIndex === 0 ? section.pageBreak : item.pageBreak) || autoBreak;
+      if (breakHere && (page.length > 0 || chunk)) { if (chunk) page.push(chunk); pages.push(page); page = []; chunk = null; if (autoBreak) page.auto = true; }
       if (!chunk) chunk = { section, sIndex, items: [] };
       chunk.items.push(item);
     });
@@ -534,7 +553,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   return (
     <div className="mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full">
       {pages.map((pageChunks, pIndex) => (
-         <PageFrame key={pIndex} isPrint={isPrint}>
+         <PageFrame key={pageChunks.map((c) => c.items.map((i) => i.id).join(',')).join('|')} isPrint={isPrint} onOverflow={addAutoBreak} autoNote={!!pageChunks.auto}>
                 {pageChunks.map(({section, sIndex, items}) => {
                     let sectionStandard = null;
                     const allStandards = section.items.map(item => templates[item.t].standard);
@@ -552,7 +571,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                             const itemStd = renderer.standard; const isAbsoluteFirst = (uniqueId === globalFirstVisibleId);
                             const grows = autoFill && !isPinned(itemDef);
                             return (
-                              <div key={uniqueId} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`} style={{ flex: `${grows ? 1 : 0} 0 auto` }}>
+                              <div key={uniqueId} data-mte-item={itemDef.id} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`} style={{ flex: `${grows ? 1 : 0} 0 auto` }}>
                                 {isAbsoluteFirst && (
                                   <div className="border-b-2 border-gray-800 pb-2 mb-3 shrink-0 w-full">
                                     <div className="flex items-baseline gap-3 w-full">
