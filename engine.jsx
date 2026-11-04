@@ -1,5 +1,5 @@
-// math-test-engine v1.9.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.9.0/engine.jsx
+// math-test-engine v1.10.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.10.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -527,13 +527,14 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   // moves back once the page before clearly has room for it (see the rejoin check below).
   const layoutSig = JSON.stringify([
     formObj.sections.map((sec) => [sec.id, sec.pageBreak, sec.items.map((i) => [i.id, i.t, !!i.pageBreak])]),
-    hiddenQuestions, questionFontSize, rubricMode, customRubricHTML, showFormLabels, hideStandards, settings && settings.autoFillSpace
+    hiddenQuestions, questionFontSize, rubricMode, customRubricHTML, showFormLabels, hideStandards, settings && settings.autoFillSpace, settings && settings.nameEveryPage
   ]);
   const [auto, setAuto] = useState({ sig: '', ids: [] });
   const autoIds = auto.sig === layoutSig ? auto.ids : [];
   const addAutoBreak = (id) => setAuto((a) => { const ids = a.sig === layoutSig ? a.ids : []; return ids.includes(id) ? a : { sig: layoutSig, ids: [...ids, id] }; });
   const removeAutoBreak = (id) => setAuto((a) => (a.sig === layoutSig && a.ids.includes(id) ? { sig: layoutSig, ids: a.ids.filter((x) => x !== id) } : a));
   const sheetsRef = useRef(null);
+  const nameEveryPage = !settings || settings.nameEveryPage !== false;
 
   // Pages are lists of chunks { section, sIndex, items }. A page starts before a section with pageBreak,
   // or before any later question in a section whose item has pageBreak.
@@ -575,6 +576,12 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
     <div ref={sheetsRef} className="mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full">
       {pages.map((pageChunks, pIndex) => (
          <PageFrame key={pageChunks.map((c) => c.items.map((i) => i.id).join(',')).join('|')} isPrint={isPrint} onOverflow={addAutoBreak} autoNote={!!pageChunks.auto}>
+                {(pIndex > 0 && nameEveryPage) && (
+                  <div className="mte-name-line flex justify-end items-end gap-6 w-full mb-3 shrink-0 text-sm">
+                    <div className="flex items-end w-60"><span className="font-bold text-gray-800 mr-2">Name:</span><div className="flex-1 border-b border-gray-800"></div></div>
+                    <div className="flex items-end w-32"><span className="font-bold text-gray-800 mr-2">Period:</span><div className="flex-1 border-b border-gray-800"></div></div>
+                  </div>
+                )}
                 {pageChunks.map(({section, sIndex, items}) => {
                     let sectionStandard = null;
                     const allStandards = section.items.map(item => templates[item.t].standard);
@@ -602,7 +609,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                     <div className="flex items-end gap-6 w-full mt-2">
                                       <p className="flex-1 min-w-0 text-gray-600 font-medium text-sm"><window.GlobalEditableText val={formObj.course} onChange={(val) => !isPrint && updateCourseTitle(val)} /></p>
                                       <div className="flex items-end w-60 shrink-0"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Name:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
-                                      <div className="flex items-end w-36 shrink-0"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Date:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
+                                      <div className="flex items-end w-32 shrink-0"><span className="font-bold text-gray-800 mr-2 text-sm"><window.LocalEditableText defaultText="Period:"/></span><div className="flex-1 border-b border-gray-800"></div></div>
                                     </div>
                                   </div>
                                 )}
@@ -811,7 +818,7 @@ function App({ config }) {
   const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(['Form A', 'Form B']);
 
   const defaultSettings = {
-    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true,
+    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: true,
     customRubricHTML: '<div style="padding: 10px; border: 2px dashed #ccc; text-align: center;">\n  <em>[Insert Custom Rubric HTML Here]</em>\n</div>', questionFontSize: 'text-[11pt]',
     rubricData: {
       hN: "N:", hNDesc: "Not demonstrated", hC: "C:", hCDesc: "Developing", hB: "B:", hBDesc: "Approaching", hAm: "A−:", hAmDesc: "Proficient", hA: "A:", hADesc: "Mastery",
@@ -914,15 +921,35 @@ function App({ config }) {
     return summary;
   };
 
+  // Embedders (the test library sets window.MTE_EMBEDDED) drive tabs, the previewed version, and printing
+  // from their own toolbar, so the engine's header is left out. Standalone files keep it.
+  const embedded = !!window.MTE_EMBEDDED;
   useEffect(() => {
     const prev = window.MathTestEngine.view || {};
     window.MathTestEngine.view = {
-      set: (next) => setView((v) => ({ ...v, ...next })),
-      get: () => view,
+      // next: { mode, form, key, zoom } for page views; tab ('student' | 'key' | 'standards' | 'settings') and
+      // active (the version shown in edit mode) for the editor.
+      set: (next) => {
+        const { tab, active, ...rest } = next;
+        if (tab) setActiveTab(tab);
+        if (active && (forms || []).some((f) => f.id === active)) setActiveFormId(active);
+        setView((v) => ({ ...v, ...rest }));
+      },
+      get: () => ({ ...view, tab: activeTab, active: activeFormId }),
       forms: () => filteredForms.map((f) => f.id),
-      onChange: prev.onChange || null // set by the embedder; called when the engine changes the view itself
+      allForms: () => (forms || []).map((f) => f.id),
+      newForm: () => generateNewForm(),
+      print: () => (embedded ? window.print() : handlePrintClick()),
+      embedded,
+      onChange: prev.onChange || null, // set by the embedder; called when the engine changes the view itself
+      onState: prev.onState || null // set by the embedder; called when the tab, version, or list of versions changes
     };
   });
+  const formIds = (forms || []).map((f) => f.id).join('|');
+  useEffect(() => {
+    const v = window.MathTestEngine.view;
+    if (v && v.onState) v.onState({ tab: activeTab, active: activeFormId, forms: formIds.split('|') });
+  }, [activeTab, activeFormId, formIds]);
   useEffect(() => {
     const fit = () => setFitZoom(Math.min(1.25, Math.max(0.3, (window.innerWidth - 48) / (8.5 * 96))));
     fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit);
@@ -971,7 +998,7 @@ function App({ config }) {
         </div>
       ) : (
       <div className="print:hidden">
-        <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50 mb-8">
+        {embedded ? <div className="h-6" /> : <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50 mb-8">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col sm:flex-row justify-between items-center py-4 gap-4">
               <div className="flex items-center gap-3">
@@ -1004,7 +1031,7 @@ function App({ config }) {
               <button onClick={() => setActiveTab('settings')} className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab === 'settings' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}><SettingsIcon className="w-4 h-4 shrink-0" /> Print Settings</button>
             </div>
           </div>
-        </header>
+        </header>}
 
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
           {activeTab === 'standards' && (
@@ -1063,6 +1090,7 @@ function App({ config }) {
                   </div>
                   <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.showAnswerLines !== false} onChange={e => setSettings({...settings, showAnswerLines: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Show answer lines</span><span className="text-xs text-gray-500">Turn off for open work space: the lines disappear but their room stays, so pages don't shift.</span></span></label>
                   <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.autoFillSpace !== false} onChange={e => setSettings({...settings, autoFillSpace: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Auto-spread workspace to fill each page</span><span className="text-xs text-gray-500">Leftover space on a page is shared evenly by its questions. Drag a question's handle to set its space yourself; double-click the handle to undo.</span></span></label>
+                  <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.nameEveryPage !== false} onChange={e => setSettings({...settings, nameEveryPage: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Name and period on every page</span><span className="text-xs text-gray-500">Adds a Name / Period line to the top of pages 2 and on, so loose pages can be matched to a student.</span></span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.hideStandardsOnStudent} onChange={e => setSettings({...settings, hideStandardsOnStudent: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Hide Standard Codes on Student Tests</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.showFormLabels} onChange={e => setSettings({...settings, showFormLabels: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Show Form Labels (A, B, etc.) on Tests & Keys</span></label>
                   <h4 className="font-bold text-sm text-gray-500 uppercase tracking-wider mt-4">Answer Key Visibility</h4>
@@ -1081,7 +1109,7 @@ function App({ config }) {
 
           {activeTab === 'student' && activeFilteredForm && (
             <div className="flex flex-col gap-8 w-full items-center">
-              <div className="bg-blue-50 text-blue-800 px-4 py-3 rounded-md border border-blue-200 shadow-sm text-sm flex items-center gap-2 w-[8.5in] max-w-[8.5in]"><Edit3 className="w-4 h-4 shrink-0" /><span><strong>Interactive Mode:</strong> Click dashed text to edit values. <strong>Click a diagram</strong> to open its toolbar. <strong>Drag the blue bar</strong> below questions to adjust spacing.</span></div>
+{!embedded && <div className="bg-blue-50 text-blue-800 px-4 py-3 rounded-md border border-blue-200 shadow-sm text-sm flex items-center gap-2 w-[8.5in] max-w-[8.5in]"><Edit3 className="w-4 h-4 shrink-0" /><span><strong>Interactive Mode:</strong> Click dashed text to edit values. <strong>Click a diagram</strong> to open its toolbar. <strong>Drag the blue bar</strong> below questions to adjust spacing.</span></div>}
               <StudentTestView formObj={activeFilteredForm} params={params} updateParam={updateParam} hideStandards={settings.hideStandardsOnStudent} updateFormTitle={updateFormTitle} updateCourseTitle={updateCourseTitle} updateSectionTitle={updateSectionTitle} toggleSectionPageBreak={toggleSectionPageBreak} toggleItemPageBreak={toggleItemPageBreak} rubricMode={settings.rubricMode} customRubricHTML={settings.customRubricHTML} questionFontSize={settings.questionFontSize} hiddenQuestions={hiddenQuestions} setHiddenQuestions={setHiddenQuestions} showFormLabels={settings.showFormLabels} settings={settings} setSettings={setSettings} templates={templates} />
             </div>
           )}
