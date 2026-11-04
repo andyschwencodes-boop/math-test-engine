@@ -1,5 +1,5 @@
-// math-test-engine v1.10.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.10.0/engine.jsx
+// math-test-engine v1.11.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.11.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -203,6 +203,50 @@ window.SettingsEditableText = ({ field, settings, setSettings }) => {
   return <span contentEditable suppressContentEditableWarning onBlur={(e) => { if(setSettings) setSettings({...settings, rubricData: {...settings.rubricData, [field]: e.target.innerHTML}}); }} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 
+// Splits TeX into pieces a line may wrap between, so long answers never run off the page: at top-level
+// \quad / \qquad (how parts are joined) and between the words of a top-level \text{...} (sentences). Braces,
+// environments, and \left...\right are never split. Returns [[tex, gap], ...]; gap is the space after a piece:
+// 1 or 2 (\quad, \qquad, in em of KaTeX's font) or 's' (a word space).
+const splitForWrap = (tex) => {
+  const out = []; let depth = 0, env = 0, cur = '';
+  const brk = (gap) => {
+    if (cur.trim()) out.push([cur, gap]);
+    else if (out.length && gap !== 's') out[out.length - 1][1] = gap; // keep the wider gap
+    cur = '';
+  };
+  for (let i = 0; i < tex.length; i++) {
+    const c = tex[i];
+    if (c === '\\') {
+      const m = /^\\(begin|end|left|right|qquad|quad|text)(?![a-zA-Z])/.exec(tex.slice(i));
+      if (!m) { cur += tex.slice(i, i + 2); i++; continue; } // other commands and escaped characters (\{, \\, ...)
+      const atTop = !depth && !env;
+      if (m[1] === 'begin' || m[1] === 'left') env++; else if (m[1] === 'end' || m[1] === 'right') env--;
+      else if ((m[1] === 'quad' || m[1] === 'qquad') && atTop) { brk(m[1] === 'qquad' ? 2 : 1); i += m[0].length - 1; continue; }
+      else if (m[1] === 'text' && atTop && tex[i + 5] === '{') {
+        let j = i + 6, d = 1; for (; j < tex.length && d; j++) { if (tex[j] === '\\') j++; else if (tex[j] === '{') d++; else if (tex[j] === '}') d--; }
+        const inner = tex.slice(i + 6, j - 1);
+        if (d === 0 && !/[\\{}]/.test(inner)) {
+          // A sentence may wrap between two of its words, but never at the edge of the text (so "4 ft" and
+          // "is (2, 7)" stay together) or right after a part label like "a." or "(b)".
+          const words = inner.split(' '); let chunk = words[0];
+          words.slice(1).forEach((w, k) => {
+            const prev = words[k];
+            if (prev && w && !/^\(?[a-zA-Z0-9]\.?\)?[.:]?$/.test(prev)) { cur += `\\text{${chunk}}`; brk('s'); chunk = w; }
+            else chunk += ' ' + w;
+          });
+          cur += `\\text{${chunk}}`;
+          i = j - 1; continue;
+        }
+      }
+      cur += m[0]; i += m[0].length - 1; continue;
+    }
+    if (c === '{') depth++; else if (c === '}') depth--;
+    cur += c;
+  }
+  brk(0);
+  return out;
+};
+
 window.MathText = ({ tex, state, update }) => {
   const containerRef = useRef(null);
   const [editState, setEditState] = useState(null);
@@ -227,9 +271,18 @@ window.MathText = ({ tex, state, update }) => {
     setEditState(null);
   };
   const safeTex = tex !== undefined && tex !== null ? String(tex) : '';
-  const html = window.katex.renderToString(safeTex, { throwOnError: false, strict: false, trust: true, displayMode: false });
+  const render = (t) => window.katex.renderToString(t, { throwOnError: false, strict: false, trust: true, displayMode: false });
+  // Each piece stays whole; the line may wrap between pieces. A \quad is 1em of KaTeX's font (1.21em of the
+  // surrounding text); a word space is a real space, so the browser can break there.
+  const pieces = splitForWrap(safeTex);
+  const html = pieces.length < 2 ? render(safeTex)
+    : pieces.map(([t, gap], i) => {
+        const last = i === pieces.length - 1;
+        const margin = typeof gap === 'number' && gap && !last ? `;margin-right:${(1.21 * gap).toFixed(2)}em` : '';
+        return `<span style="display:inline-block;white-space:nowrap${margin}">${render(t)}</span>${last ? '' : gap === 's' ? ' ' : '<wbr>'}`;
+      }).join('');
   return (
-    <span className="relative inline-block whitespace-nowrap align-middle group" ref={containerRef}>
+    <span className={`relative inline-block ${pieces.length < 2 ? 'whitespace-nowrap' : 'max-w-full'} align-middle group`} ref={containerRef}>
       <span onClick={handleClick} dangerouslySetInnerHTML={{ __html: html }} className={update ? "cursor-text" : ""} />
       {editState && <input autoFocus type="text" defaultValue={editState.val} onBlur={(e) => handleBlur(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && e.target.blur()} className="absolute z-10 text-center border-b-2 border-blue-600 bg-blue-50 text-blue-800 font-bold focus:outline-none shadow-sm katex-edit-input" style={{ top: editState.top - 2, left: editState.left - 2, width: editState.width + 4, height: editState.height + 4, fontSize: 'inherit', fontFamily: 'inherit' }} />}
     </span>
@@ -670,6 +723,20 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
 };
 
 // splitSections (page views only): one sheet per section, with the full key header on the first sheet.
+// Answer-key lines never scroll or get cut off in print: parts wrap (see MathText), and anything still too wide
+// (one long expression) shrinks its text until it fits, down to 60%. It resets when the question's numbers change.
+const FitWidth = ({ className, dep, children }) => {
+  const ref = useRef(null);
+  const [scale, setScale] = useState(1);
+  const depKey = JSON.stringify(dep || null);
+  useEffect(() => { setScale(1); }, [depKey]);
+  useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    if (el.scrollWidth > el.clientWidth + 1 && scale > 0.6) setScale(Math.max(0.6, Math.floor((scale * el.clientWidth / el.scrollWidth) * 100) / 100));
+  });
+  return <div ref={ref} className={`${className} overflow-hidden`} data-mte-fit={scale < 1 ? scale : undefined}><div style={scale < 1 ? { fontSize: `${scale * 100}%` } : undefined}>{children}</div></div>;
+};
+
 const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPageBreak, isPrint=false, hiddenQuestions=[], setHiddenQuestions, templates, splitSections=false }) => {
   const qNumMap = {}; let counter = 1;
   formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; } }); });
@@ -745,8 +812,8 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
                                 {((settings.keyShowWork && renderer.work) || (settings.keyShowAnswer && renderer.answer) || (settings.keyShowGrading && renderer.grading) || !settings.keyShowQuestion) && (
                                   <div className={`${settings.keyShowQuestion ? 'ml-6 mt-2' : ''} p-4 bg-red-50 border border-red-200 rounded-md relative shrink-0`}>
                                      {!settings.keyShowQuestion && <span className="font-bold text-red-800 absolute -ml-6">{qNum}.</span>}
-                                     {settings.keyShowWork && renderer.work && <div className={`text-red-800 leading-[1.6] text-[11pt] mb-3 overflow-x-auto`}>{renderer.work(itemState)}</div>}
-                                     {settings.keyShowAnswer && renderer.answer && <div className="font-bold text-red-700 leading-[1.6] text-[14pt] mb-2 overflow-x-auto">{renderer.answer(itemState)}</div>}
+                                     {settings.keyShowWork && renderer.work && <FitWidth dep={itemState} className="text-red-800 leading-[1.6] text-[11pt] mb-3">{renderer.work(itemState)}</FitWidth>}
+                                     {settings.keyShowAnswer && renderer.answer && <FitWidth dep={itemState} className="font-bold text-red-700 leading-[1.6] text-[14pt] mb-2">{renderer.answer(itemState)}</FitWidth>}
                                      {settings.keyShowGrading && renderer.grading && <div className="mt-4 pt-3 border-t border-red-200 text-[10pt] text-red-600 font-sans italic flex items-start gap-2"><CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /><span><strong>Grading Note:</strong> {typeof renderer.grading === 'function' ? renderer.grading(itemState) : renderer.grading}</span></div>}
                                   </div>
                                 )}
