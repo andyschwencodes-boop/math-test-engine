@@ -1,5 +1,5 @@
-// math-test-engine v1.8.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.8.0/engine.jsx
+// math-test-engine v1.9.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.9.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -522,14 +522,18 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; if (!globalFirstVisibleId) globalFirstVisibleId = uniqueId; } }); });
 
   // Automatic page breaks (ids of questions that start a page because the page before couldn't fit them).
-  // They belong to one layout: anything that can change heights gives a new signature and starts over.
+  // A layout change (questions, page breaks, fonts, rubric, settings) starts over. Edits to a question's values
+  // or spacing keep them, so the pages don't rebuild (and the view doesn't jump) on every click; a question
+  // moves back once the page before clearly has room for it (see the rejoin check below).
   const layoutSig = JSON.stringify([
-    formObj.sections.map((sec) => [sec.id, sec.pageBreak, sec.items.map((i) => [i.id, i.t, !!i.pageBreak, params[i.id]])]),
+    formObj.sections.map((sec) => [sec.id, sec.pageBreak, sec.items.map((i) => [i.id, i.t, !!i.pageBreak])]),
     hiddenQuestions, questionFontSize, rubricMode, customRubricHTML, showFormLabels, hideStandards, settings && settings.autoFillSpace
   ]);
   const [auto, setAuto] = useState({ sig: '', ids: [] });
   const autoIds = auto.sig === layoutSig ? auto.ids : [];
   const addAutoBreak = (id) => setAuto((a) => { const ids = a.sig === layoutSig ? a.ids : []; return ids.includes(id) ? a : { sig: layoutSig, ids: [...ids, id] }; });
+  const removeAutoBreak = (id) => setAuto((a) => (a.sig === layoutSig && a.ids.includes(id) ? { sig: layoutSig, ids: a.ids.filter((x) => x !== id) } : a));
+  const sheetsRef = useRef(null);
 
   // Pages are lists of chunks { section, sIndex, items }. A page starts before a section with pageBreak,
   // or before any later question in a section whose item has pageBreak.
@@ -550,8 +554,25 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   if (page.length > 0) pages.push(page);
   const isPinned = (item) => params[item.id]?.customSpace !== undefined && params[item.id]?.customSpace !== null;
 
+  // Rejoin: when the page before an automatic page now has room for its first question (with full minimum
+  // workspace plus a margin), drop that break. It only fires when the question clearly fits, so it can't flip-flop.
+  useLayoutEffect(() => {
+    const root = sheetsRef.current; if (!root || !autoIds.length) return;
+    const sheets = [...root.children].filter((c) => c.classList.contains('mte-sheet'));
+    const growth = (scope) => [...scope.querySelectorAll('[data-mte-ws="auto"]')].reduce((sum, w) => sum + Math.max(0, w.clientHeight - parseFloat(w.dataset.min || '0')), 0);
+    pages.forEach((pg, j) => {
+      if (!pg.auto || j === 0 || !sheets[j] || !sheets[j - 1]) return;
+      const body = sheets[j - 1].lastElementChild, first = sheets[j].querySelector('[data-mte-item]');
+      if (!body || !first || !autoIds.includes(first.dataset.mteItem)) return;
+      const used = Math.max(0, ...[...body.children].map((c) => c.offsetTop + c.offsetHeight + (parseFloat(getComputedStyle(c).marginBottom) || 0))) - body.offsetTop;
+      const free = body.clientHeight - (used - growth(body));
+      const need = first.offsetHeight - growth(first) + 16 + 16; // the question, its bottom margin, and a safety margin
+      if (free > need) removeAutoBreak(first.dataset.mteItem);
+    });
+  });
+
   return (
-    <div className="mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full">
+    <div ref={sheetsRef} className="mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full">
       {pages.map((pageChunks, pIndex) => (
          <PageFrame key={pageChunks.map((c) => c.items.map((i) => i.id).join(',')).join('|')} isPrint={isPrint} onOverflow={addAutoBreak} autoNote={!!pageChunks.auto}>
                 {pageChunks.map(({section, sIndex, items}) => {
