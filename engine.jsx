@@ -1,5 +1,5 @@
-// math-test-engine v1.11.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.11.0/engine.jsx
+// math-test-engine v1.12.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.12.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -442,6 +442,39 @@ const RubricRenderer = ({ mode, isFirstSection, customHTML, settings, setSetting
 const PAGE_DPI = 96;
 // How much of each automatic workspace's minimum a page can afford (1 = all of it, 0 = none).
 const PageSqueeze = createContext(1);
+
+// Document type and view, for components inside templates. notes: a resource packet (config.kind === 'notes');
+// key: rendering the answer key.
+const DocContext = createContext({ notes: false, key: false });
+// Fill-in blank for guided notes: a line on the student copy, the answer (red, on the line) on the answer key.
+// ans: plain text, or tex: math. w: minimum width in inches (the line also grows to fit the answer, so the
+// student copy and the key take the same room).
+window.Blank = ({ ans = '', tex, w = 1.1 }) => {
+  const { key } = useContext(DocContext);
+  return (
+    <span className="mte-blank relative inline-block align-baseline border-b border-slate-700 px-1 text-center" style={{ minWidth: `${w}in` }}>
+      <span className={key ? 'text-red-700 font-semibold' : 'invisible'}>{tex ? <window.MathText tex={tex} /> : ans}</span>
+    </span>
+  );
+};
+// Shows children only on the answer key (e.g. a filled-in table cell or a step of a worked example).
+window.KeyOnly = ({ children }) => (useContext(DocContext).key ? <span className="text-red-700">{children}</span> : null);
+// Display label per visible item: a number ("3."), or the template's label ("Example 2", "Key Idea").
+// label: 'Example' numbers each label on its own (Example 1, Example 2, ...); numbered: false shows the label
+// alone, or nothing. Items with neither keep the usual question numbers.
+const itemLabels = (formObj, hiddenQuestions, templates) => {
+  const map = {}; const per = {}; let n = 0;
+  formObj.sections.forEach((sec) => sec.items.forEach((item) => {
+    const id = `${item.id}-${item.t}`; if (hiddenQuestions.includes(id)) return;
+    const r = templates[item.t] || {};
+    if (r.label) { per[r.label] = (per[r.label] || 0) + 1; map[id] = { label: r.numbered === false ? r.label : `${r.label} ${per[r.label]}` }; }
+    else map[id] = r.numbered === false ? { label: '' } : { num: ++n };
+  }));
+  return map;
+};
+const LabelTag = ({ text, keyView }) => (text
+  ? <span className={`inline-block text-[10pt] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-sm ${keyView ? 'bg-red-100 text-red-800' : 'bg-slate-800 text-white'}`}>{text}</span>
+  : null);
 const PageFrame = ({ isPrint, children, onOverflow, autoNote }) => {
   const bodyRef = useRef(null);
   const [overflowIn, setOverflowIn] = useState(0);
@@ -545,7 +578,7 @@ const GapIcon = ({ out }) => (
     <line x1="4" y1="12" x2="20" y2="12" />
   </svg>
 );
-const QuestionTools = ({ isFirst, itemDef, itemState, update, uniqueId, setHiddenQuestions, toggleItemPageBreak }) => {
+const QuestionTools = ({ isFirst, itemDef, itemState, update, uniqueId, setHiddenQuestions, toggleItemPageBreak, pos = 'left-0 top-full mt-1' }) => {
   const ref = useRef(null);
   const [hasParts, setHasParts] = useState(false);
   const partGrid = () => { const q = ref.current && ref.current.closest('.group\\/q'); return q && q.querySelector('.grid:has(> .group\\/part)'); };
@@ -556,7 +589,7 @@ const QuestionTools = ({ isFirst, itemDef, itemState, update, uniqueId, setHidde
     update('part_gap', Math.max(0, Math.min(2, Math.round((now + delta) * 20) / 20)));
   };
   return (
-    <div ref={ref} className="absolute left-0 top-full mt-1 z-30 flex flex-col gap-1 invisible group-hover/q:visible print:hidden">
+    <div ref={ref} className={`absolute ${pos} z-30 flex flex-col gap-1 invisible group-hover/q:visible print:hidden`}>
       {setHiddenQuestions && <ToolBtn tone="danger" title="Hide this question from the test" onClick={() => setHiddenQuestions(prev => [...prev, uniqueId])}><EyeOff className="w-3.5 h-3.5" /></ToolBtn>}
       {(!isFirst && toggleItemPageBreak) && <ToolBtn tone={itemDef.pageBreak ? 'on' : 'plain'} always={itemDef.pageBreak} title={itemDef.pageBreak ? 'New page before this question: ON (all forms). Click to turn off.' : 'Start a new page before this question (all forms)'} onClick={() => toggleItemPageBreak(itemDef.id)}><FileText className="w-3.5 h-3.5" /></ToolBtn>}
       {itemState?.hidden_parts?.length > 0 && <ToolBtn tone="warn" always title={`Restore ${itemState.hidden_parts.length} hidden part${itemState.hidden_parts.length > 1 ? 's' : ''} (all forms)`} onClick={() => update('hidden_parts', [])}><Eye className="w-3.5 h-3.5" /></ToolBtn>}
@@ -571,8 +604,8 @@ const QuestionTools = ({ isFirst, itemDef, itemState, update, uniqueId, setHidde
 const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFormTitle, updateCourseTitle, updateSectionTitle, toggleSectionPageBreak, toggleItemPageBreak, rubricMode, customRubricHTML, isPrint=false, questionFontSize="text-[12pt]", hiddenQuestions=[], setHiddenQuestions, showFormLabels=true, settings, setSettings, templates }) => {
   const autoFill = settings?.autoFillSpace !== false;
   const isHiddenItem = (item) => hiddenQuestions.includes(`${item.id}-${item.t}`);
-  const qNumMap = {}; let counter = 1; let globalFirstVisibleId = null;
-  formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; if (!globalFirstVisibleId) globalFirstVisibleId = uniqueId; } }); });
+  const qNumMap = itemLabels(formObj, hiddenQuestions, templates); let globalFirstVisibleId = null;
+  formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId) && !globalFirstVisibleId) globalFirstVisibleId = uniqueId; }); });
 
   // Automatic page breaks (ids of questions that start a page because the page before couldn't fit them).
   // A layout change (questions, page breaks, fonts, rubric, settings) starts over. Edits to a question's values
@@ -640,7 +673,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                     const allStandards = section.items.map(item => templates[item.t].standard);
                     if (allStandards.length > 0 && allStandards.every(v => v === allStandards[0])) sectionStandard = allStandards[0];
                     const firstVisibleIndex = section.items.findIndex(item => !isHiddenItem(item));
-                    const shares = autoFill ? items.filter(item => !isPinned(item)).length : 0;
+                    const shares = autoFill ? items.filter(item => !isPinned(item) && templates[item.t].fill !== false).length : 0;
                     return (
                       <div key={`${section.id}-${items[0].id}`} className="w-full flex flex-col mb-2" style={{ flex: `${shares} 0 auto` }}>
                           {items.map((itemDef, cIndex) => {
@@ -650,7 +683,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                             const renderer = templates[itemDef.t]; const itemState = params[itemDef.id];
                             const update = isPrint ? null : (field, val) => updateParam(itemDef.id, field, val);
                             const itemStd = renderer.standard; const isAbsoluteFirst = (uniqueId === globalFirstVisibleId);
-                            const grows = autoFill && !isPinned(itemDef);
+                            const grows = autoFill && !isPinned(itemDef) && renderer.fill !== false;
                             return (
                               <div key={uniqueId} data-mte-item={itemDef.id} className={`group/q relative flex flex-col focus-within:z-50 hover:z-[60] print-avoid-break ${isLast ? 'mb-0' : 'mb-4'}`} style={{ flex: `${grows ? 1 : 0} 0 auto` }}>
                                 {isAbsoluteFirst && (
@@ -690,17 +723,27 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                       </div>
                                     )}
                                     <div className={`text-gray-900 leading-[1.5] shrink-0 ${questionFontSize}`}>
+                                      {qNum && qNum.num === undefined ? (
+                                        // Labeled item ("Example 2", "Key Idea"): label on its own line, full-width content,
+                                        // tools in the page margin to the left.
+                                        <div className="relative w-full">
+                                          {!isPrint && <QuestionTools isFirst={isFirst} itemDef={itemDef} itemState={itemState} update={update} uniqueId={uniqueId} setHiddenQuestions={setHiddenQuestions} toggleItemPageBreak={toggleItemPageBreak} pos="right-full top-0 mr-2" />}
+                                          {qNum.label && <div className="mb-1"><LabelTag text={qNum.label} /></div>}
+                                          <div className="w-full">{renderer.q(itemState, update)}</div>
+                                        </div>
+                                      ) : (
                                       <div className="flex flex-wrap items-baseline gap-x-2 w-full">
                                          <div className="relative self-start mt-1 mr-1 shrink-0 min-w-[1.6rem]">
-                                           <span className="font-bold text-gray-900">{qNum}.</span>
+                                           <span className="font-bold text-gray-900">{qNum && qNum.num}.</span>
                                            {!isPrint && <QuestionTools isFirst={isFirst} itemDef={itemDef} itemState={itemState} update={update} uniqueId={uniqueId} setHiddenQuestions={setHiddenQuestions} toggleItemPageBreak={toggleItemPageBreak} />}
                                          </div>
                                          <div className="inline flex-1 min-w-[200px]">
                                            {renderer.q(itemState, update)}
                                          </div>
                                       </div>
+                                      )}
                                     </div>
-                                    <Workspace itemState={itemState} renderer={renderer} update={update} isPrint={isPrint} autoFill={autoFill} />
+                                    <Workspace itemState={itemState} renderer={renderer} update={update} isPrint={isPrint} autoFill={autoFill && renderer.fill !== false} />
                                   </div>
                                   {(renderer.svg && !itemState?.hide_svg) && (
                                     <div className="shrink-0 w-[240px] h-0 relative z-10 print:w-[200px]">
@@ -737,9 +780,14 @@ const FitWidth = ({ className, dep, children }) => {
   return <div ref={ref} className={`${className} overflow-hidden`} data-mte-fit={scale < 1 ? scale : undefined}><div style={scale < 1 ? { fontSize: `${scale * 100}%` } : undefined}>{children}</div></div>;
 };
 
-const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPageBreak, isPrint=false, hiddenQuestions=[], setHiddenQuestions, templates, splitSections=false }) => {
-  const qNumMap = {}; let counter = 1;
-  formObj.sections.forEach(sec => { sec.items.forEach(item => { const uniqueId = `${item.id}-${item.t}`; if (!hiddenQuestions.includes(uniqueId)) { qNumMap[uniqueId] = counter++; } }); });
+const AnswerKeyView = (props) => {
+  // Everything inside renders as the key: window.Blank shows its answer, window.KeyOnly its children.
+  const doc = useContext(DocContext);
+  return <DocContext.Provider value={{ ...doc, key: true }}><AnswerKeyPages {...props} notes={doc.notes} /></DocContext.Provider>;
+};
+const AnswerKeyPages = ({ formObj, params, updateParam, settings, toggleSectionPageBreak, isPrint=false, hiddenQuestions=[], setHiddenQuestions, templates, splitSections=false, notes=false }) => {
+  const qNumMap = itemLabels(formObj, hiddenQuestions, templates);
+  const numText = (id) => { const m = qNumMap[id]; return !m ? '-' : m.num !== undefined ? `${m.num}.` : m.label; };
   const pages = [[]];
   formObj.sections.forEach((section, sIndex) => {
     const hasVisibleItems = section.items.some(item => !hiddenQuestions.includes(`${item.id}-${item.t}`));
@@ -752,11 +800,11 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
     <div className={`mte-sheets flex flex-col gap-8 print:gap-0 print:block items-center w-full ${isPrint ? 'print-page-break' : ''}`}>
       {pages.map((pageSections, pIndex) => (
          <div key={pIndex} style={{ width: '8.5in', padding: '0.4in' }} className={`mte-sheet bg-red-50/20 mx-auto box-border flex flex-col relative ${isPrint ? 'print:min-h-0' : 'shadow-2xl border border-red-200 mb-8 min-h-[11in]'} overflow-hidden`}>
-            {(splitSections && pIndex > 0) && <div className="text-xs font-bold text-red-700 uppercase tracking-widest mb-4">Answer key · {formObj.id}</div>}
+            {(splitSections && pIndex > 0) && <div className="text-xs font-bold text-red-700 uppercase tracking-widest mb-4">Answer key{notes ? '' : ` · ${formObj.id}`}</div>}
             {(!splitSections || pIndex === 0) && (
             <div className="border-b-4 border-red-800 pb-4 mb-8 shrink-0 print-avoid-break">
               <div className="flex justify-center items-center gap-3">
-                 <h1 className="text-3xl font-extrabold text-red-800 uppercase tracking-wide text-center">Teacher Answer Key</h1>
+                 <h1 className="text-3xl font-extrabold text-red-800 uppercase tracking-wide text-center">{notes ? 'Answer Key' : 'Teacher Answer Key'}</h1>
                  {settings.showFormLabels && <span className="bg-red-100 text-red-800 font-bold px-3 py-1 rounded-full text-lg tracking-widest">{formObj.id}</span>}
               </div>
               <p className="text-center font-bold text-red-700 mt-2 text-xl"><span dangerouslySetInnerHTML={{ __html: formObj.title }} /></p>
@@ -766,11 +814,13 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
               {pageSections.map(({section, sIndex}) => {
                  const firstVisibleIndex = section.items.findIndex(item => !hiddenQuestions.includes(`${item.id}-${item.t}`));
                  return (
-                    <div key={section.id} className="w-full mt-4 flex flex-col">
+                    // print:block: Chrome won't split a flex column between pages at a question, so a section that
+                    // starts below the key's title would jump whole to the next page and leave the title alone.
+                    <div key={section.id} className="w-full mt-4 flex flex-col print:block">
                         {section.items.map((itemDef, iIndex) => {
                           const uniqueId = `${itemDef.id}-${itemDef.t}`; const isHidden = hiddenQuestions.includes(uniqueId);
                           if (isPrint && isHidden) return null;
-                          const qNum = isHidden ? '-' : qNumMap[uniqueId]; const isFirst = (iIndex === firstVisibleIndex); const isLast = (iIndex === section.items.length - 1);
+                          const qNum = isHidden ? '-' : numText(uniqueId); const labeled = !isHidden && qNumMap[uniqueId] && qNumMap[uniqueId].num === undefined; const isFirst = (iIndex === firstVisibleIndex); const isLast = (iIndex === section.items.length - 1);
                           const renderer = templates[itemDef.t]; const itemState = params[itemDef.id];
                           const update = isPrint ? null : (field, val) => updateParam(itemDef.id, field, val);
                           return (
@@ -797,10 +847,17 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
                                 {settings.keyShowQuestion && (
                                   <div className="flex flex-row w-full gap-4 items-start shrink-0">
                                     <div className="flex-1 min-w-0 w-full">
-                                      <div className={`leading-[1.5] text-gray-500 flex flex-wrap items-baseline gap-x-2 ${settings.questionFontSize}`}>
-                                        <span className="font-bold shrink-0">{qNum}.</span>
+                                      {labeled ? (
+                                        <div className={`leading-[1.5] ${notes ? 'text-gray-800' : 'text-gray-500'} ${settings.questionFontSize}`}>
+                                          {qNum && <div className="mb-1"><LabelTag text={qNum} keyView /></div>}
+                                          <div className="w-full">{renderer.q(itemState, update)}</div>
+                                        </div>
+                                      ) : (
+                                      <div className={`leading-[1.5] ${notes ? 'text-gray-800' : 'text-gray-500'} flex flex-wrap items-baseline gap-x-2 ${settings.questionFontSize}`}>
+                                        <span className="font-bold shrink-0">{qNum}</span>
                                         <div className="inline flex-1 min-w-[200px]">{renderer.q(itemState, update)}</div>
                                       </div>
+                                      )}
                                     </div>
                                     {(renderer.svg && !itemState?.hide_svg) && (
                                       <div className="shrink-0 flex justify-center items-start pt-2 w-[204px] opacity-80">
@@ -811,7 +868,7 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
                                 )}
                                 {((settings.keyShowWork && renderer.work) || (settings.keyShowAnswer && renderer.answer) || (settings.keyShowGrading && renderer.grading) || !settings.keyShowQuestion) && (
                                   <div className={`${settings.keyShowQuestion ? 'ml-6 mt-2' : ''} p-4 bg-red-50 border border-red-200 rounded-md relative shrink-0`}>
-                                     {!settings.keyShowQuestion && <span className="font-bold text-red-800 absolute -ml-6">{qNum}.</span>}
+                                     {!settings.keyShowQuestion && <span className="font-bold text-red-800 absolute -ml-6">{qNum}</span>}
                                      {settings.keyShowWork && renderer.work && <FitWidth dep={itemState} className="text-red-800 leading-[1.6] text-[11pt] mb-3">{renderer.work(itemState)}</FitWidth>}
                                      {settings.keyShowAnswer && renderer.answer && <FitWidth dep={itemState} className="font-bold text-red-700 leading-[1.6] text-[14pt] mb-2">{renderer.answer(itemState)}</FitWidth>}
                                      {settings.keyShowGrading && renderer.grading && <div className="mt-4 pt-3 border-t border-red-200 text-[10pt] text-red-600 font-sans italic flex items-start gap-2"><CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /><span><strong>Grading Note:</strong> {typeof renderer.grading === 'function' ? renderer.grading(itemState) : renderer.grading}</span></div>}
@@ -835,6 +892,9 @@ const AnswerKeyView = ({ formObj, params, updateParam, settings, toggleSectionPa
 // --- MAIN APP CONTROLLER ---
 function App({ config }) {
   const { standards, paramsGenerator, templates, forms: defaultForms, topicId } = config;
+  // Resource packets (guided notes, examples, practice): one version, no rubric, no standards summary page.
+  const isNotes = config.kind === 'notes';
+  const firstParams = () => (isNotes ? paramsGenerator('A') : { ...paramsGenerator('A'), ...paramsGenerator('B') });
   const localStoragePrefix = `mtg_${topicId}`;
   // A snapshot baked into the page (the test viewer's "Copy HTML") carries the numbers and edits the
   // teacher saw: { id, topicId, store: { params: '<json>', ... } }. A snapshot this browser hasn't seen
@@ -870,8 +930,8 @@ function App({ config }) {
       catch(e) { return defaultForms; } 
   });
   const [params, setParams] = useState(() => { 
-      try { const saved = readSaved('params'); return saved ? JSON.parse(saved) : { ...paramsGenerator('A'), ...paramsGenerator('B') }; } 
-      catch(e) { return { ...paramsGenerator('A'), ...paramsGenerator('B') }; } 
+      try { const saved = readSaved('params'); return saved ? JSON.parse(saved) : firstParams(); } 
+      catch(e) { return firstParams(); } 
   });
   const [hiddenQuestions, setHiddenQuestions] = useState(() => { 
       try { const saved = readSaved('hiddenQuestions'); return saved ? JSON.parse(saved) : []; } 
@@ -882,7 +942,7 @@ function App({ config }) {
       catch(e) { return []; } 
   });
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(['Form A', 'Form B']);
+  const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(() => (defaultForms || []).map((f) => f.id));
 
   const defaultSettings = {
     printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: true,
@@ -894,16 +954,18 @@ function App({ config }) {
       sN: "N", sC: "C", sB: "B", sAm: "A−", sA: "A"
     }
   };
-  const [settings, setSettings] = useState(() => { 
+  const [rawSettings, setSettings] = useState(() => { 
       try { const saved = readSaved('settings'); return saved ? { ...defaultSettings, ...JSON.parse(saved), showFormLabels: JSON.parse(saved).showFormLabels !== undefined ? JSON.parse(saved).showFormLabels : true } : defaultSettings; } 
       catch(e) { return defaultSettings; } 
   });
+  // Notes never show a rubric, form labels, or the standards summary, and the key always shows the notes.
+  const settings = isNotes ? { ...rawSettings, rubricMode: 'hidden', printSpecs: false, showFormLabels: false, keyShowQuestion: true } : rawSettings;
 
   useEffect(() => { writeSaved('forms', JSON.stringify(forms)); }, [forms]);
   useEffect(() => { writeSaved('params', JSON.stringify(params)); }, [params]);
   useEffect(() => { writeSaved('hiddenQuestions', JSON.stringify(hiddenQuestions)); }, [hiddenQuestions]);
   useEffect(() => { writeSaved('disabledStandards', JSON.stringify(disabledStandards)); }, [disabledStandards]);
-  useEffect(() => { writeSaved('settings', JSON.stringify(settings)); }, [settings]);
+  useEffect(() => { writeSaved('settings', JSON.stringify(rawSettings)); }, [rawSettings]);
   useEffect(() => { writeSaved('activeFormId', activeFormId); }, [activeFormId]);
 
   // Bulletproof mapping function to prevent 'undefined' crashes
@@ -1005,7 +1067,8 @@ function App({ config }) {
       get: () => ({ ...view, tab: activeTab, active: activeFormId }),
       forms: () => filteredForms.map((f) => f.id),
       allForms: () => (forms || []).map((f) => f.id),
-      newForm: () => generateNewForm(),
+      kind: isNotes ? 'notes' : 'test',
+      newForm: () => { if (!isNotes) generateNewForm(); },
       print: () => (embedded ? window.print() : handlePrintClick()),
       embedded,
       onChange: prev.onChange || null, // set by the embedder; called when the engine changes the view itself
@@ -1079,7 +1142,7 @@ function App({ config }) {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200">
+              <div className={`flex items-center gap-2 bg-gray-50 px-3 py-1.5 rounded-md border border-gray-200 ${isNotes ? 'hidden' : ''}`}>
                 <Edit3 className="w-4 h-4 text-gray-500" /><span className="text-sm font-bold text-gray-700">Preview Version:</span>
                 <div className="relative">
                   <select value={activeFormId} onChange={(e) => { if (e.target.value === 'NEW') generateNewForm(); else setActiveFormId(e.target.value); }} className="appearance-none bg-white border border-gray-300 text-gray-900 text-sm rounded focus:ring-blue-500 focus:border-blue-500 block p-1.5 pr-8 font-semibold cursor-pointer">
@@ -1125,7 +1188,7 @@ function App({ config }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-blue-800 bg-blue-50 px-3 py-1 rounded">1. Select Documents to Print</h3>
-                  <div className="p-3 border border-gray-200 rounded-md bg-gray-50">
+                  <div className={`p-3 border border-gray-200 rounded-md bg-gray-50 ${isNotes ? 'hidden' : ''}`}>
                     <div className="font-bold text-gray-800 mb-2 border-b border-gray-200 pb-1">Select Forms to Include:</div>
                     <div className="grid grid-cols-2 gap-2">
                       {(forms || []).map(f => (
@@ -1136,13 +1199,13 @@ function App({ config }) {
                       ))}
                     </div>
                   </div>
-                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printSpecs} onChange={e => setSettings({...settings, printSpecs: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Standards Summary Page</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printForms} onChange={e => setSettings({...settings, printForms: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Print Student Test Copies</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printKeys} onChange={e => setSettings({...settings, printKeys: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Print Teacher Answer Keys</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded ${isNotes ? 'hidden' : ''}`}><input type="checkbox" checked={settings.printSpecs} onChange={e => setSettings({...settings, printSpecs: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Standards Summary Page</span></label>
+                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printForms} onChange={e => setSettings({...settings, printForms: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">{isNotes ? 'Print Student Pages' : 'Print Student Test Copies'}</span></label>
+                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printKeys} onChange={e => setSettings({...settings, printKeys: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">{isNotes ? 'Print Answer Key' : 'Print Teacher Answer Keys'}</span></label>
                 </div>
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-blue-800 bg-blue-50 px-3 py-1 rounded">2. Customize Content</h3>
-                  <div className="p-3 border border-gray-200 rounded-md bg-gray-50 space-y-3">
+                  <div className={`p-3 border border-gray-200 rounded-md bg-gray-50 space-y-3 ${isNotes ? 'hidden' : ''}`}>
                      <div className="font-bold text-gray-800 border-b border-gray-200 pb-1">Rubric Settings:</div>
                      <select value={settings.rubricMode} onChange={(e) => setSettings({...settings, rubricMode: e.target.value})} className="w-full p-2 border border-gray-300 rounded text-sm focus:ring-blue-500 focus:border-blue-500">
                         <option value="5-point">Standard 5-Point Scale</option><option value="4-point">Standard 4-Point Scale</option><option value="custom">Import Custom (Text/HTML)</option><option value="hidden">Hide Rubric Entirely</option>
@@ -1159,9 +1222,9 @@ function App({ config }) {
                   <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.autoFillSpace !== false} onChange={e => setSettings({...settings, autoFillSpace: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Auto-spread workspace to fill each page</span><span className="text-xs text-gray-500">Leftover space on a page is shared evenly by its questions. Drag a question's handle to set its space yourself; double-click the handle to undo.</span></span></label>
                   <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.nameEveryPage !== false} onChange={e => setSettings({...settings, nameEveryPage: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Name and period on every page</span><span className="text-xs text-gray-500">Adds a Name / Period line to the top of pages 2 and on, so loose pages can be matched to a student.</span></span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.hideStandardsOnStudent} onChange={e => setSettings({...settings, hideStandardsOnStudent: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Hide Standard Codes on Student Tests</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.showFormLabels} onChange={e => setSettings({...settings, showFormLabels: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Show Form Labels (A, B, etc.) on Tests & Keys</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded ${isNotes ? 'hidden' : ''}`}><input type="checkbox" checked={settings.showFormLabels} onChange={e => setSettings({...settings, showFormLabels: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Show Form Labels (A, B, etc.) on Tests & Keys</span></label>
                   <h4 className="font-bold text-sm text-gray-500 uppercase tracking-wider mt-4">Answer Key Visibility</h4>
-                  <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowQuestion} onChange={e => setSettings({...settings, keyShowQuestion: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Original Questions & Diagrams</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded ${isNotes ? 'hidden' : ''}`}><input type="checkbox" checked={settings.keyShowQuestion} onChange={e => setSettings({...settings, keyShowQuestion: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Original Questions & Diagrams</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowWork} onChange={e => setSettings({...settings, keyShowWork: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Worked Out Solutions</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowAnswer} onChange={e => setSettings({...settings, keyShowAnswer: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Final Answers</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowGrading} onChange={e => setSettings({...settings, keyShowGrading: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Grading Considerations / Rubric Tips</span></label>
@@ -1222,6 +1285,6 @@ function App({ config }) {
 window.MathTestEngine = {
   init: function(targetId, config) {
     const root = ReactDOM.createRoot(document.getElementById(targetId));
-    root.render(<App config={config} />);
+    root.render(<DocContext.Provider value={{ notes: config.kind === 'notes', key: false }}><App config={config} /></DocContext.Provider>);
   }
 };
