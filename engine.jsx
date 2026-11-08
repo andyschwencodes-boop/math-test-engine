@@ -1,5 +1,5 @@
-// math-test-engine v1.15.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.15.0/engine.jsx
+// math-test-engine v1.16.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.16.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -950,7 +950,19 @@ function App({ config }) {
       catch(e) { return defaultForms; } 
   });
   const [params, setParams] = useState(() => { 
-      try { const saved = readSaved('params'); return saved ? JSON.parse(saved) : firstParams(); } 
+      // Saved numbers can predate items added to the payload later (a new section, say). Roll fresh numbers for
+      // any item that has none, per form letter, instead of crashing on its missing state.
+      const fillMissing = (p) => {
+        const out = { ...p };
+        new Set((forms || []).map((f) => String(f.id).split(' ')[1]).filter(Boolean)).forEach((letter) => {
+          const ids = (forms || []).filter((f) => String(f.id).split(' ')[1] === letter).flatMap((f) => (f.sections || []).flatMap((sec) => (sec.items || []).map((it) => it.id)));
+          if (ids.every((id) => out[id])) return;
+          const fresh = paramsGenerator(letter) || {};
+          ids.forEach((id) => { if (!out[id] && fresh[id]) out[id] = fresh[id]; });
+        });
+        return out;
+      };
+      try { const saved = readSaved('params'); return saved ? fillMissing(JSON.parse(saved)) : firstParams(); } 
       catch(e) { return firstParams(); } 
   });
   const [hiddenQuestions, setHiddenQuestions] = useState(() => { 
