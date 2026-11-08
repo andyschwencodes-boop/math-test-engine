@@ -1,5 +1,5 @@
-// math-test-engine v1.13.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.13.0/engine.jsx
+// math-test-engine v1.14.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.14.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -676,7 +676,21 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                     const firstVisibleIndex = section.items.findIndex(item => !isHiddenItem(item));
                     const shares = autoFill ? items.filter(item => !isPinned(item) && templates[item.t].fill !== false).length : 0;
                     return (
-                      <div key={`${section.id}-${items[0].id}`} className="w-full flex flex-col mb-2" style={{ flex: `${shares} 0 auto` }}>
+                      // Homework: the day's title runs sideways down a left column instead of a heading row (saves height).
+                      <div key={`${section.id}-${items[0].id}`} className={`w-full flex ${homework ? 'flex-row gap-2' : 'flex-col'} mb-2`} style={{ flex: `${shares} 0 auto` }}>
+                        {homework && (
+                          <div className="relative shrink-0 w-[0.42in] border-r-2 border-gray-800">
+                            {!isPrint && sIndex > 0 && toggleSectionPageBreak && (
+                              <button onClick={() => toggleSectionPageBreak(section.id)} className={`absolute right-full top-0 mr-1 text-[10px] px-1 rounded border print:hidden ${section.pageBreak ? 'bg-blue-50 text-blue-700 border-blue-300' : 'bg-gray-50 text-gray-400 border-gray-200'}`} title={section.pageBreak ? 'This day starts a new page. Click to keep it on the previous page.' : 'Click to start this day on a new page.'}>📄</button>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+                              <div className="max-h-full text-[9pt] leading-tight font-bold uppercase tracking-wide text-gray-800 text-center" style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}>
+                                <window.GlobalEditableText val={section.title} onChange={(val) => !isPrint && updateSectionTitle(section.id, val)} />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div className={homework ? 'flex-1 min-w-0 flex flex-col' : 'contents'}>
                           {items.map((itemDef, cIndex) => {
                             const iIndex = section.items.indexOf(itemDef);
                             const uniqueId = `${itemDef.id}-${itemDef.t}`;
@@ -700,8 +714,8 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                     </div>
                                   </div>
                                 )}
-                                {isFirst && (
-                                  // Homework days use a compact heading so a whole week fits on two pages.
+                                {(isFirst && !homework) && (
+                                  // (Homework shows the day in its left column instead.)
                                   <div className={`${homework ? 'mb-1' : 'mb-3'} shrink-0 w-full`}>
                                     <div className={`${homework ? 'mb-1' : 'mb-2'} pb-1 border-b-2 border-gray-800 flex justify-between items-end ${isAbsoluteFirst ? 'mt-1' : homework ? 'mt-2' : 'mt-4'}`}>
                                        <div className="flex items-center gap-3">
@@ -758,6 +772,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                               </div>
                             )
                           })}
+                        </div>
                       </div>
                     )
                 })}
@@ -948,7 +963,7 @@ function App({ config }) {
   const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(() => (defaultForms || []).map((f) => f.id));
 
   const defaultSettings = {
-    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: config.kind === 'homework' /* homework pages skip the codes by default */, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: true,
+    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: config.kind === 'homework' /* homework pages skip the codes by default */, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: config.kind !== 'homework' /* homework prints back to back */,
     customRubricHTML: '<div style="padding: 10px; border: 2px dashed #ccc; text-align: center;">\n  <em>[Insert Custom Rubric HTML Here]</em>\n</div>', questionFontSize: 'text-[11pt]',
     rubricData: {
       hN: "N:", hNDesc: "Not demonstrated", hC: "C:", hCDesc: "Developing", hB: "B:", hBDesc: "Approaching", hAm: "A−:", hAmDesc: "Proficient", hA: "A:", hADesc: "Mastery",
