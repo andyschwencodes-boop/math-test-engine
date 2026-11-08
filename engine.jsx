@@ -1,5 +1,5 @@
-// math-test-engine v1.12.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.12.0/engine.jsx
+// math-test-engine v1.13.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.13.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -621,6 +621,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   const removeAutoBreak = (id) => setAuto((a) => (a.sig === layoutSig && a.ids.includes(id) ? { sig: layoutSig, ids: a.ids.filter((x) => x !== id) } : a));
   const sheetsRef = useRef(null);
   const nameEveryPage = !settings || settings.nameEveryPage !== false;
+  const { homework } = useContext(DocContext);
 
   // Pages are lists of chunks { section, sIndex, items }. A page starts before a section with pageBreak,
   // or before any later question in a section whose item has pageBreak.
@@ -700,10 +701,11 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                   </div>
                                 )}
                                 {isFirst && (
-                                  <div className="mb-3 shrink-0 w-full">
-                                    <div className={`mb-2 pb-1 border-b-2 border-gray-800 flex justify-between items-end ${isAbsoluteFirst ? 'mt-1' : 'mt-4'}`}>
+                                  // Homework days use a compact heading so a whole week fits on two pages.
+                                  <div className={`${homework ? 'mb-1' : 'mb-3'} shrink-0 w-full`}>
+                                    <div className={`${homework ? 'mb-1' : 'mb-2'} pb-1 border-b-2 border-gray-800 flex justify-between items-end ${isAbsoluteFirst ? 'mt-1' : homework ? 'mt-2' : 'mt-4'}`}>
                                        <div className="flex items-center gap-3">
-                                         <h2 className="text-xl font-bold uppercase tracking-wide text-gray-800"><window.GlobalEditableText val={section.title} onChange={(val) => !isPrint && updateSectionTitle(section.id, val)} /></h2>
+                                         <h2 className={`${homework ? 'text-[11pt]' : 'text-xl'} font-bold uppercase tracking-wide text-gray-800`}><window.GlobalEditableText val={section.title} onChange={(val) => !isPrint && updateSectionTitle(section.id, val)} /></h2>
                                          {!isPrint && sIndex > 0 && toggleSectionPageBreak && (
                                            <button onClick={() => toggleSectionPageBreak(section.id)} className={`text-xs font-bold px-2 py-0.5 rounded border transition-colors ${section.pageBreak ? 'bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200' : 'bg-gray-50 text-gray-400 border-gray-200 hover:bg-gray-100 hover:text-gray-600'}`} title="Toggle Page Break before this section">
                                               {section.pageBreak ? '📄 Page Break ON' : '📄 Page Break OFF'}
@@ -892,8 +894,9 @@ const AnswerKeyPages = ({ formObj, params, updateParam, settings, toggleSectionP
 // --- MAIN APP CONTROLLER ---
 function App({ config }) {
   const { standards, paramsGenerator, templates, forms: defaultForms, topicId } = config;
-  // Resource packets (guided notes, examples, practice): one version, no rubric, no standards summary page.
-  const isNotes = config.kind === 'notes';
+  // Resource packets (guided notes, examples, practice) and weekly homework: one version, no rubric, no
+  // standards summary page.
+  const isNotes = config.kind === 'notes' || config.kind === 'homework';
   const firstParams = () => (isNotes ? paramsGenerator('A') : { ...paramsGenerator('A'), ...paramsGenerator('B') });
   const localStoragePrefix = `mtg_${topicId}`;
   // A snapshot baked into the page (the test viewer's "Copy HTML") carries the numbers and edits the
@@ -945,7 +948,7 @@ function App({ config }) {
   const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(() => (defaultForms || []).map((f) => f.id));
 
   const defaultSettings = {
-    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: false, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: true,
+    printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: config.kind === 'homework' /* homework pages skip the codes by default */, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: true,
     customRubricHTML: '<div style="padding: 10px; border: 2px dashed #ccc; text-align: center;">\n  <em>[Insert Custom Rubric HTML Here]</em>\n</div>', questionFontSize: 'text-[11pt]',
     rubricData: {
       hN: "N:", hNDesc: "Not demonstrated", hC: "C:", hCDesc: "Developing", hB: "B:", hBDesc: "Approaching", hAm: "A−:", hAmDesc: "Proficient", hA: "A:", hADesc: "Mastery",
@@ -1067,7 +1070,7 @@ function App({ config }) {
       get: () => ({ ...view, tab: activeTab, active: activeFormId }),
       forms: () => filteredForms.map((f) => f.id),
       allForms: () => (forms || []).map((f) => f.id),
-      kind: isNotes ? 'notes' : 'test',
+      kind: isNotes ? config.kind : 'test',
       newForm: () => { if (!isNotes) generateNewForm(); },
       print: () => (embedded ? window.print() : handlePrintClick()),
       embedded,
@@ -1285,6 +1288,6 @@ function App({ config }) {
 window.MathTestEngine = {
   init: function(targetId, config) {
     const root = ReactDOM.createRoot(document.getElementById(targetId));
-    root.render(<DocContext.Provider value={{ notes: config.kind === 'notes', key: false }}><App config={config} /></DocContext.Provider>);
+    root.render(<DocContext.Provider value={{ notes: config.kind === 'notes' || config.kind === 'homework', homework: config.kind === 'homework', key: false }}><App config={config} /></DocContext.Provider>);
   }
 };
