@@ -1,5 +1,5 @@
-// math-test-engine v1.14.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.14.0/engine.jsx
+// math-test-engine v1.15.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.15.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -570,7 +570,9 @@ const Workspace = ({ itemState, renderer, update, isPrint, autoFill }) => {
 // Hover-only tools appear while the question is hovered; tools showing a non-default state stay visible.
 const ToolBtn = ({ onClick, title, tone = 'plain', always = false, children }) => {
   const tones = { plain: 'bg-white text-gray-500 border-gray-200 hover:text-blue-700 hover:bg-blue-50 hover:border-blue-200', danger: 'bg-white text-gray-500 border-gray-200 hover:text-red-600 hover:bg-red-50 hover:border-red-200', on: 'bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200', warn: 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100' };
-  return <button type="button" onClick={onClick} title={title} aria-label={title} className={`${always ? 'visible' : ''} w-6 h-6 inline-flex items-center justify-center rounded border shadow-sm text-[11px] font-bold leading-none ${tones[tone]}`}>{children}</button>;
+  // Buttons take no space until the question is hovered (display: none), so the hidden toolbar of a short last
+  // question can't stick out below the page and trigger a false "too tall" warning. Pinned ones always show.
+  return <button type="button" onClick={onClick} title={title} aria-label={title} className={`${always ? 'visible inline-flex' : 'hidden group-hover/q:inline-flex'} w-6 h-6 items-center justify-center rounded border shadow-sm text-[11px] font-bold leading-none ${tones[tone]}`}>{children}</button>;
 };
 const GapIcon = ({ out }) => (
   <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
