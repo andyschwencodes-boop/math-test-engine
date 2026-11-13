@@ -1,4 +1,4 @@
-// math-test-engine v1.16.0
+// math-test-engine v1.17.0
 // Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.16.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
@@ -974,7 +974,13 @@ function App({ config }) {
       catch(e) { return []; } 
   });
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(() => (defaultForms || []).map((f) => f.id));
+  // Which forms print. Saved like the rest of the teacher's edits, so a form added in the library (Form C) is still
+  // selected when the test reopens in a new tab to print. Ids of deleted forms drop out; nothing valid means all.
+  const [selectedFormsToPrint, setSelectedFormsToPrint] = useState(() => {
+    const all = (forms || []).map((f) => f.id);
+    try { const saved = JSON.parse(readSaved('formsToPrint') || 'null'); if (Array.isArray(saved)) { const keep = saved.filter((id) => all.includes(id)); if (keep.length) return keep; } } catch (e) {}
+    return all;
+  });
 
   const defaultSettings = {
     printSpecs: true, printForms: true, printKeys: true, hideStandardsOnStudent: config.kind === 'homework' /* homework pages skip the codes by default */, showFormLabels: true, keyShowAnswer: true, keyShowWork: true, keyShowQuestion: true, keyShowGrading: true, rubricMode: '5-point', autoFillSpace: true, showAnswerLines: true, nameEveryPage: config.kind !== 'homework' /* homework prints back to back */,
@@ -999,6 +1005,7 @@ function App({ config }) {
   useEffect(() => { writeSaved('disabledStandards', JSON.stringify(disabledStandards)); }, [disabledStandards]);
   useEffect(() => { writeSaved('settings', JSON.stringify(rawSettings)); }, [rawSettings]);
   useEffect(() => { writeSaved('activeFormId', activeFormId); }, [activeFormId]);
+  useEffect(() => { writeSaved('formsToPrint', JSON.stringify(selectedFormsToPrint)); }, [selectedFormsToPrint]);
 
   // Bulletproof mapping function to prevent 'undefined' crashes
   const getFilteredForms = (formsToFilter) => {
