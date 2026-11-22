@@ -1,5 +1,5 @@
-// math-test-engine v1.17.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.16.0/engine.jsx
+// math-test-engine v1.18.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.18.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -185,22 +185,22 @@ window.TemplateText = ({ s, u, field, defaultText }) => {
   const val = s[field] !== undefined ? s[field] : defaultText;
   const [tempVal, setTempVal] = useState(val);
   useEffect(() => { setTempVal(val); }, [val]);
-  return <span contentEditable suppressContentEditableWarning onBlur={(e) => u(field, e.target.innerHTML)} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
+  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => u(field, e.target.innerHTML)} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 window.GlobalEditableText = ({ val, onChange, className="" }) => {
   const [tempVal, setTempVal] = useState(val);
   useEffect(() => { setTempVal(val); }, [val]);
-  return <span contentEditable suppressContentEditableWarning onBlur={(e) => onChange(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: tempVal }} />;
+  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => onChange(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 window.LocalEditableText = ({ defaultText, className="" }) => {
   const [val, setVal] = useState(defaultText);
-  return <span contentEditable suppressContentEditableWarning onBlur={(e) => setVal(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: val }} />;
+  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => setVal(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: val }} />;
 };
 window.SettingsEditableText = ({ field, settings, setSettings }) => {
   const val = settings?.rubricData?.[field] || "";
   const [tempVal, setTempVal] = useState(val);
   useEffect(() => { setTempVal(val); }, [val]);
-  return <span contentEditable suppressContentEditableWarning onBlur={(e) => { if(setSettings) setSettings({...settings, rubricData: {...settings.rubricData, [field]: e.target.innerHTML}}); }} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
+  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => { if(setSettings) setSettings({...settings, rubricData: {...settings.rubricData, [field]: e.target.innerHTML}}); }} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 
 // Splits TeX into pieces a line may wrap between, so long answers never run off the page: at top-level
@@ -916,17 +916,22 @@ function App({ config }) {
   const isNotes = config.kind === 'notes' || config.kind === 'homework';
   const firstParams = () => (isNotes ? paramsGenerator('A') : { ...paramsGenerator('A'), ...paramsGenerator('B') });
   const localStoragePrefix = `mtg_${topicId}`;
+  // Share-link guests (window.MTE_GUEST = { showKey, owner, importUrl }, set by the library's /s/<token> page) see
+  // the shared version read-only. Print settings change for this visit only; nothing is saved, and the answer key
+  // appears only when the link allows it.
+  const guest = window.MTE_GUEST || null;
+  const keyOK = !guest || guest.showKey === true;
   // A snapshot baked into the page (the test viewer's "Copy HTML") carries the numbers and edits the
   // teacher saw: { id, topicId, store: { params: '<json>', ... } }. A snapshot this browser hasn't seen
   // replaces its saved state once; where storage is blocked (e.g. a sandboxed LMS embed) it's read directly.
   const snapshot = (window.MTE_SNAPSHOT && window.MTE_SNAPSHOT.topicId === topicId) ? window.MTE_SNAPSHOT : null;
   const snapshotStore = (snapshot && snapshot.store) || {};
-  const writeSaved = (key, value) => { try { localStorage.setItem(`${localStoragePrefix}_${key}`, value); } catch (e) {} };
+  const writeSaved = (key, value) => { if (guest) return; try { localStorage.setItem(`${localStoragePrefix}_${key}`, value); } catch (e) {} };
   const readSaved = (key) => {
-    try { const v = localStorage.getItem(`${localStoragePrefix}_${key}`); if (v !== null) return v; } catch (e) {}
+    if (!guest) { try { const v = localStorage.getItem(`${localStoragePrefix}_${key}`); if (v !== null) return v; } catch (e) {} }
     return snapshotStore[key] !== undefined ? snapshotStore[key] : null;
   };
-  if (snapshot && snapshot.id) {
+  if (snapshot && snapshot.id && !guest) {
     try {
       if (readSaved('snapshotId') !== snapshot.id) {
         Object.entries(snapshotStore).forEach(([key, value]) => { if (/^[A-Za-z]+$/.test(key) && typeof value === 'string') writeSaved(key, value); });
@@ -938,7 +943,7 @@ function App({ config }) {
   const [activeTab, setActiveTab] = useState('student');
   // Page views for embedders such as the test viewer: mode 'edit' (normal editor), 'tiles' (all pages as
   // thumbnails), or 'scroll' (pages one under another, fit to width). Both page modes show the printed layout.
-  const [view, setView] = useState({ mode: 'edit', form: null, key: false, zoom: 0.3 });
+  const [view, setView] = useState({ mode: guest ? 'scroll' : 'edit', form: null, key: false, zoom: 0.3 });
   const [fitZoom, setFitZoom] = useState(1);
   const [jumpTo, setJumpTo] = useState(null);
   const pagesRef = useRef(null);
@@ -997,7 +1002,8 @@ function App({ config }) {
       catch(e) { return defaultSettings; } 
   });
   // Notes never show a rubric, form labels, or the standards summary, and the key always shows the notes.
-  const settings = isNotes ? { ...rawSettings, rubricMode: 'hidden', printSpecs: false, showFormLabels: false, keyShowQuestion: true } : rawSettings;
+  const settingsBase = isNotes ? { ...rawSettings, rubricMode: 'hidden', printSpecs: false, showFormLabels: false, keyShowQuestion: true } : rawSettings;
+  const settings = keyOK ? settingsBase : { ...settingsBase, printKeys: false };
 
   useEffect(() => { writeSaved('forms', JSON.stringify(forms)); }, [forms]);
   useEffect(() => { writeSaved('params', JSON.stringify(params)); }, [params]);
@@ -1059,6 +1065,7 @@ function App({ config }) {
   };
 
   const handlePrintClick = () => {
+    if (guest) { window.print(); return; }
     try {
       document.querySelectorAll('input[type="text"], input[type="number"], input[type="date"], textarea').forEach(el => el.setAttribute('value', el.value));
       document.querySelectorAll('input[type="checkbox"], input[type="radio"]').forEach(el => { if (el.checked) el.setAttribute('checked', 'checked'); else el.removeAttribute('checked'); });
@@ -1159,15 +1166,37 @@ function App({ config }) {
           </div>
         </div>
       )}
+      {guest && (
+        <div className="print:hidden sticky top-0 z-50 bg-white border-b border-gray-200 shadow-sm mb-4">
+          <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+            <div className="flex flex-col min-w-0 mr-auto">
+              <span className="font-bold text-gray-900">{forms && forms[0] ? forms[0].title : 'Shared document'}</span>
+              <span className="text-xs text-gray-500">{guest.owner ? `Shared by ${guest.owner}` : 'Shared document'} · view only: print settings you change are not saved</span>
+            </div>
+            {!isNotes && (forms || []).length > 1 && (
+              <select value={activeFormId} onChange={(e) => { setActiveFormId(e.target.value); setView((v) => ({ ...v, form: e.target.value })); }} className="bg-white border border-gray-300 text-gray-900 text-sm rounded p-1.5 font-semibold" aria-label="Version">
+                {(forms || []).map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+              </select>
+            )}
+            <div className="flex rounded-md border border-gray-300 overflow-hidden text-sm font-semibold" role="group" aria-label="View">
+              <button onClick={() => setView((v) => ({ ...v, mode: 'scroll', key: false, form: activeFormId }))} className={`px-3 py-1.5 ${view.mode !== 'edit' && !view.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>{isNotes ? 'Pages' : 'Student pages'}</button>
+              {keyOK && <button onClick={() => setView((v) => ({ ...v, mode: 'scroll', key: true, form: activeFormId }))} className={`px-3 py-1.5 border-l border-gray-300 ${view.mode !== 'edit' && view.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Answer key</button>}
+              <button onClick={() => { setActiveTab('settings'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 border-l border-gray-300 ${view.mode === 'edit' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Print settings</button>
+            </div>
+            <button onClick={handlePrintClick} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-semibold"><Printer className="w-4 h-4" /> Print</button>
+            {guest.importUrl && <a href={guest.importUrl} target="_top" rel="noopener" className="text-sm font-semibold text-blue-700 hover:underline">Copy to my library</a>}
+          </div>
+        </div>
+      )}
       {view.mode !== 'edit' ? (
         <div ref={pagesRef} className={`print:hidden mte-pages mte-${view.mode}`} onClick={pickTile} style={{ zoom: view.mode === 'tiles' ? view.zoom : fitZoom }}>
-          {viewForm && (view.key
+          {viewForm && (view.key && keyOK
             ? <AnswerKeyView formObj={viewForm} params={params} updateParam={updateParam} settings={settings} toggleSectionPageBreak={toggleSectionPageBreak} isPrint={true} hiddenQuestions={hiddenQuestions} templates={templates} splitSections={true} />
             : <StudentTestView formObj={viewForm} params={params} updateParam={updateParam} hideStandards={settings.hideStandardsOnStudent} updateFormTitle={updateFormTitle} updateCourseTitle={updateCourseTitle} updateSectionTitle={updateSectionTitle} toggleSectionPageBreak={toggleSectionPageBreak} rubricMode={settings.rubricMode} customRubricHTML={settings.customRubricHTML} isPrint={true} questionFontSize={settings.questionFontSize} hiddenQuestions={hiddenQuestions} showFormLabels={settings.showFormLabels} settings={settings} setSettings={setSettings} templates={templates} />)}
         </div>
       ) : (
       <div className="print:hidden">
-        {embedded ? <div className="h-6" /> : <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50 mb-8">
+        {embedded || guest ? <div className="h-6" /> : <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50 mb-8">
           <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex flex-col sm:flex-row justify-between items-center py-4 gap-4">
               <div className="flex items-center gap-3">
@@ -1240,7 +1269,7 @@ function App({ config }) {
                   </div>
                   <label className={`flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded ${isNotes ? 'hidden' : ''}`}><input type="checkbox" checked={settings.printSpecs} onChange={e => setSettings({...settings, printSpecs: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Standards Summary Page</span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printForms} onChange={e => setSettings({...settings, printForms: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">{isNotes ? 'Print Student Pages' : 'Print Student Test Copies'}</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.printKeys} onChange={e => setSettings({...settings, printKeys: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">{isNotes ? 'Print Answer Key' : 'Print Teacher Answer Keys'}</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded ${keyOK ? '' : 'hidden'}`}><input type="checkbox" checked={settings.printKeys} onChange={e => setSettings({...settings, printKeys: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">{isNotes ? 'Print Answer Key' : 'Print Teacher Answer Keys'}</span></label>
                 </div>
                 <div className="space-y-4">
                   <h3 className="text-lg font-bold text-blue-800 bg-blue-50 px-3 py-1 rounded">2. Customize Content</h3>
@@ -1262,17 +1291,19 @@ function App({ config }) {
                   <label className="flex items-start space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.nameEveryPage !== false} onChange={e => setSettings({...settings, nameEveryPage: e.target.checked})} className="w-5 h-5 mt-0.5 accent-blue-600 cursor-pointer" /><span><span className="font-semibold text-gray-700 block">Name and period on every page</span><span className="text-xs text-gray-500">Adds a Name / Period line to the top of pages 2 and on, so loose pages can be matched to a student.</span></span></label>
                   <label className="flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.hideStandardsOnStudent} onChange={e => setSettings({...settings, hideStandardsOnStudent: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Hide Standard Codes on Student Tests</span></label>
                   <label className={`flex items-center space-x-3 cursor-pointer p-2 hover:bg-gray-50 rounded ${isNotes ? 'hidden' : ''}`}><input type="checkbox" checked={settings.showFormLabels} onChange={e => setSettings({...settings, showFormLabels: e.target.checked})} className="w-5 h-5 accent-blue-600 cursor-pointer" /><span className="font-semibold text-gray-700">Show Form Labels (A, B, etc.) on Tests & Keys</span></label>
-                  <h4 className="font-bold text-sm text-gray-500 uppercase tracking-wider mt-4">Answer Key Visibility</h4>
-                  <label className={`flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded ${isNotes ? 'hidden' : ''}`}><input type="checkbox" checked={settings.keyShowQuestion} onChange={e => setSettings({...settings, keyShowQuestion: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Original Questions & Diagrams</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowWork} onChange={e => setSettings({...settings, keyShowWork: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Worked Out Solutions</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowAnswer} onChange={e => setSettings({...settings, keyShowAnswer: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Final Answers</span></label>
-                  <label className="flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded"><input type="checkbox" checked={settings.keyShowGrading} onChange={e => setSettings({...settings, keyShowGrading: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Grading Considerations / Rubric Tips</span></label>
+                  <h4 className={`font-bold text-sm text-gray-500 uppercase tracking-wider mt-4 ${keyOK ? '' : 'hidden'}`}>Answer Key Visibility</h4>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded ${isNotes || !keyOK ? 'hidden' : ''}`}><input type="checkbox" checked={settings.keyShowQuestion} onChange={e => setSettings({...settings, keyShowQuestion: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Original Questions & Diagrams</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded ${keyOK ? '' : 'hidden'}`}><input type="checkbox" checked={settings.keyShowWork} onChange={e => setSettings({...settings, keyShowWork: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Worked Out Solutions</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded ${keyOK ? '' : 'hidden'}`}><input type="checkbox" checked={settings.keyShowAnswer} onChange={e => setSettings({...settings, keyShowAnswer: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Final Answers</span></label>
+                  <label className={`flex items-center space-x-3 cursor-pointer p-1.5 hover:bg-gray-50 rounded ${keyOK ? '' : 'hidden'}`}><input type="checkbox" checked={settings.keyShowGrading} onChange={e => setSettings({...settings, keyShowGrading: e.target.checked})} className="w-4 h-4 accent-blue-600 cursor-pointer" /><span className="text-gray-700 text-sm">Show Grading Considerations / Rubric Tips</span></label>
                 </div>
               </div>
+              {!guest && (
               <div className="space-y-4 mt-8 pt-8 border-t border-gray-200">
                 <h3 className="text-lg font-bold text-red-800 bg-red-50 px-3 py-1 rounded">Danger Zone</h3>
                 <button onClick={() => { if(window.confirm('Are you sure you want to reset all application data?')){ try { Object.keys(localStorage).filter(k => k.startsWith(`${localStoragePrefix}_`)).forEach(k => localStorage.removeItem(k)); } catch (e) {} window.location.reload(); } }} className="bg-red-100 text-red-700 hover:bg-red-200 font-bold py-2 px-4 rounded transition-colors">Reset Application Data</button>
               </div>
+              )}
             </div>
           )}
 
