@@ -1,5 +1,5 @@
-// math-test-engine v1.18.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.18.0/engine.jsx
+// math-test-engine v1.19.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.19.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -1056,6 +1056,18 @@ function App({ config }) {
     });
   };
 
+  // Share-link guests: fresh numbers for every version, for this visit only. Each question's new values are laid
+  // over its old state, so the teacher's wording, hidden parts, spacing, and diagram placement stay.
+  const sharedParams = useRef(params);
+  const [rerolled, setRerolled] = useState(false);
+  const rerollAll = () => {
+    const letters = [...new Set((forms || []).map((f) => String(f.id).split(' ')[1]).filter(Boolean))];
+    const fresh = Object.assign({}, ...letters.map((l) => paramsGenerator(l) || {}));
+    setParams((prev) => { const next = { ...prev }; Object.entries(fresh).forEach(([id, v]) => { next[id] = { ...(prev[id] || {}), ...v }; }); return next; });
+    setRerolled(true);
+  };
+  const restoreShared = () => { setParams(sharedParams.current); setRerolled(false); };
+
   const generateNewForm = () => {
     const nextCharCode = 65 + (forms || []).length; const letter = String.fromCharCode(nextCharCode);
     setParams(prev => ({ ...prev, ...paramsGenerator(letter) }));
@@ -1171,7 +1183,7 @@ function App({ config }) {
           <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
             <div className="flex flex-col min-w-0 mr-auto">
               <span className="font-bold text-gray-900">{forms && forms[0] ? forms[0].title : 'Shared document'}</span>
-              <span className="text-xs text-gray-500">{guest.owner ? `Shared by ${guest.owner}` : 'Shared document'} · view only: print settings you change are not saved</span>
+              <span className="text-xs text-gray-500">{guest.owner ? `Shared by ${guest.owner}` : 'Shared document'} · view only: new numbers and print settings you change are not saved</span>
             </div>
             {!isNotes && (forms || []).length > 1 && (
               <select value={activeFormId} onChange={(e) => { setActiveFormId(e.target.value); setView((v) => ({ ...v, form: e.target.value })); }} className="bg-white border border-gray-300 text-gray-900 text-sm rounded p-1.5 font-semibold" aria-label="Version">
@@ -1183,6 +1195,8 @@ function App({ config }) {
               {keyOK && <button onClick={() => setView((v) => ({ ...v, mode: 'scroll', key: true, form: activeFormId }))} className={`px-3 py-1.5 border-l border-gray-300 ${view.mode !== 'edit' && view.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Answer key</button>}
               <button onClick={() => { setActiveTab('settings'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 border-l border-gray-300 ${view.mode === 'edit' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Print settings</button>
             </div>
+            <button onClick={rerollAll} title="Roll new numbers for every version (the answer key follows). Not saved: reload to get the shared numbers back." className="px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-sm font-semibold">New numbers</button>
+            {rerolled && <button onClick={restoreShared} title="Go back to the numbers the teacher shared" className="px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-sm font-semibold">Original numbers</button>}
             <button onClick={handlePrintClick} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-md text-sm font-semibold"><Printer className="w-4 h-4" /> Print</button>
             {guest.importUrl && <a href={guest.importUrl} target="_top" rel="noopener" className="text-sm font-semibold text-blue-700 hover:underline">Copy to my library</a>}
           </div>
