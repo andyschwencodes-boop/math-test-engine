@@ -1,5 +1,5 @@
-// math-test-engine v1.19.0
-// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.19.0/engine.jsx
+// math-test-engine v1.20.0
+// Served from https://cdn.jsdelivr.net/gh/andyschwencodes-boop/math-test-engine@v1.20.0/engine.jsx
 const { useState, useEffect, useRef, useLayoutEffect, useContext, createContext } = React;
 
 // --- PRINT CSS ---
@@ -185,22 +185,22 @@ window.TemplateText = ({ s, u, field, defaultText }) => {
   const val = s[field] !== undefined ? s[field] : defaultText;
   const [tempVal, setTempVal] = useState(val);
   useEffect(() => { setTempVal(val); }, [val]);
-  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => u(field, e.target.innerHTML)} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
+  return <span contentEditable suppressContentEditableWarning onBlur={(e) => u(field, e.target.innerHTML)} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 window.GlobalEditableText = ({ val, onChange, className="" }) => {
   const [tempVal, setTempVal] = useState(val);
   useEffect(() => { setTempVal(val); }, [val]);
-  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => onChange(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: tempVal }} />;
+  return <span contentEditable suppressContentEditableWarning onBlur={(e) => onChange(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 window.LocalEditableText = ({ defaultText, className="" }) => {
   const [val, setVal] = useState(defaultText);
-  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => setVal(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: val }} />;
+  return <span contentEditable suppressContentEditableWarning onBlur={(e) => setVal(e.target.innerHTML)} className={`outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent ${className}`} dangerouslySetInnerHTML={{ __html: val }} />;
 };
 window.SettingsEditableText = ({ field, settings, setSettings }) => {
   const val = settings?.rubricData?.[field] || "";
   const [tempVal, setTempVal] = useState(val);
   useEffect(() => { setTempVal(val); }, [val]);
-  return <span contentEditable={!window.MTE_GUEST} suppressContentEditableWarning onBlur={(e) => { if(setSettings) setSettings({...settings, rubricData: {...settings.rubricData, [field]: e.target.innerHTML}}); }} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
+  return <span contentEditable suppressContentEditableWarning onBlur={(e) => { if(setSettings) setSettings({...settings, rubricData: {...settings.rubricData, [field]: e.target.innerHTML}}); }} className="outline-none hover:bg-blue-50 focus:bg-blue-50 focus:border-b-2 focus:border-blue-500 hover:border-b hover:border-gray-400 hover:border-dashed cursor-text transition-colors print:border-none print:bg-transparent" dangerouslySetInnerHTML={{ __html: tempVal }} />;
 };
 
 // Splits TeX into pieces a line may wrap between, so long answers never run off the page: at top-level
@@ -445,7 +445,10 @@ const PageSqueeze = createContext(1);
 
 // Document type and view, for components inside templates. notes: a resource packet (config.kind === 'notes');
 // key: rendering the answer key.
-const DocContext = createContext({ notes: false, key: false });
+const DocContext = createContext({ notes: false, key: false, fw: 'mn', ccss: null });
+// Standards framework. Templates use 2022 Minnesota codes; in Common Core mode (fw 'ccss') a code shows as the
+// CCSS standard(s) it maps to (standards/ccss.json, shipped next to this file).
+const stdShown = (doc, code) => (doc && doc.fw === 'ccss' && doc.ccss ? (doc.ccss.map[code] || [code]).join(', ') : code);
 // Fill-in blank for guided notes: a line on the student copy, the answer (red, on the line) on the answer key.
 // ans: plain text, or tex: math. w: minimum width in inches (the line also grows to fit the answer, so the
 // student copy and the key take the same room).
@@ -623,7 +626,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
   const removeAutoBreak = (id) => setAuto((a) => (a.sig === layoutSig && a.ids.includes(id) ? { sig: layoutSig, ids: a.ids.filter((x) => x !== id) } : a));
   const sheetsRef = useRef(null);
   const nameEveryPage = !settings || settings.nameEveryPage !== false;
-  const { homework } = useContext(DocContext);
+  const doc = useContext(DocContext); const { homework } = doc;
 
   // Pages are lists of chunks { section, sIndex, items }. A page starts before a section with pageBreak,
   // or before any later question in a section whose item has pageBreak.
@@ -728,7 +731,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                            </button>
                                          )}
                                        </div>
-                                       {(!hideStandards && sectionStandard) && <span className="text-sm font-bold text-gray-500 font-mono tracking-wide">{sectionStandard}</span>}
+                                       {(!hideStandards && sectionStandard) && <span className="text-sm font-bold text-gray-500 font-mono tracking-wide">{stdShown(doc, sectionStandard)}</span>}
                                     </div>
                                     <RubricRenderer mode={rubricMode} isFirstSection={sIndex === 0} customHTML={customRubricHTML} settings={settings} setSettings={setSettings} />
                                   </div>
@@ -737,7 +740,7 @@ const StudentTestView = ({ formObj, params, updateParam, hideStandards, updateFo
                                   <div className="flex-1 w-full flex flex-col relative" {...(typeof itemState?.part_gap === 'number' ? { 'data-mte-pgap': '', style: { '--mte-part-gap': `${itemState.part_gap}in` } } : {})}>
                                     {(!hideStandards && !sectionStandard) && (
                                       <div className="flex justify-end w-full mb-1">
-                                        <span className="text-xs font-bold text-gray-400 font-mono">[{itemStd}]</span>
+                                        <span className="text-xs font-bold text-gray-400 font-mono">[{stdShown(doc, itemStd)}]</span>
                                       </div>
                                     )}
                                     <div className={`text-gray-900 leading-[1.5] shrink-0 ${questionFontSize}`}>
@@ -943,7 +946,7 @@ function App({ config }) {
   const [activeTab, setActiveTab] = useState('student');
   // Page views for embedders such as the test viewer: mode 'edit' (normal editor), 'tiles' (all pages as
   // thumbnails), or 'scroll' (pages one under another, fit to width). Both page modes show the printed layout.
-  const [view, setView] = useState({ mode: guest ? 'scroll' : 'edit', form: null, key: false, zoom: 0.3 });
+  const [view, setView] = useState({ mode: 'edit', form: null, key: false, zoom: 0.3 });
   const [fitZoom, setFitZoom] = useState(1);
   const [jumpTo, setJumpTo] = useState(null);
   const pagesRef = useRef(null);
@@ -1004,6 +1007,35 @@ function App({ config }) {
   // Notes never show a rubric, form labels, or the standards summary, and the key always shows the notes.
   const settingsBase = isNotes ? { ...rawSettings, rubricMode: 'hidden', printSpecs: false, showFormLabels: false, keyShowQuestion: true } : rawSettings;
   const settings = keyOK ? settingsBase : { ...settingsBase, printKeys: false };
+  // Standards framework for this document (Standards tab): 'mn' (default) or 'ccss'. The Common Core data loads
+  // once, from the same release folder as this engine, the first time someone switches.
+  const fwWanted = settings.standardsFramework === 'ccss' ? 'ccss' : 'mn';
+  const [ccss, setCcss] = useState(window.MTE_CCSS || null);
+  const [ccssErr, setCcssErr] = useState(false);
+  useEffect(() => {
+    if (fwWanted !== 'ccss' || ccss) return;
+    const tag = document.querySelector('script[src*="engine.jsx"]');
+    const url = tag && tag.src ? tag.src.replace(/engine\.jsx(\?.*)?$/, 'standards/ccss.json') : '';
+    if (!url) { setCcssErr(true); return; }
+    setCcssErr(false);
+    fetch(url).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then((d) => { window.MTE_CCSS = d; setCcss(d); }).catch(() => setCcssErr(true));
+  }, [fwWanted, ccss]);
+  const fw = fwWanted === 'ccss' && ccss ? 'ccss' : 'mn';
+  const docBase = useContext(DocContext);
+  const docView = { ...docBase, fw, ccss };
+  // Standards tab rows: one per MN benchmark, or in Common Core mode one per group of CCSS codes (a row turns
+  // on or off every MN benchmark behind it).
+  const stdRows = () => {
+    if (fw !== 'ccss') return Object.entries(standards).map(([std, desc]) => ({ key: std, mns: [std], items: [{ code: std, desc }] }));
+    const groups = {};
+    Object.keys(standards).forEach((mn) => {
+      const codes = ccss.map[mn] || [mn]; const key = codes.join(', ');
+      (groups[key] = groups[key] || { key, mns: [], items: codes.map((c) => ({ code: c, desc: ccss.text[c] || standards[c] || '' })) }).mns.push(mn);
+    });
+    return Object.values(groups);
+  };
+  const setFramework = (f) => setSettings((prev) => ({ ...prev, standardsFramework: f }));
 
   useEffect(() => { writeSaved('forms', JSON.stringify(forms)); }, [forms]);
   useEffect(() => { writeSaved('params', JSON.stringify(params)); }, [params]);
@@ -1159,6 +1191,7 @@ function App({ config }) {
   };
 
   return (
+    <DocContext.Provider value={docView}>
     <div className={`min-h-screen bg-gray-100 text-gray-900 font-sans print:bg-white relative print:min-h-0 print:h-auto ${settings.showAnswerLines === false ? 'mte-hide-answer-lines' : ''}`}>
       {showPrintModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 print:hidden">
@@ -1183,17 +1216,19 @@ function App({ config }) {
           <div className="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
             <div className="flex flex-col min-w-0 mr-auto">
               <span className="font-bold text-gray-900">{forms && forms[0] ? forms[0].title : 'Shared document'}</span>
-              <span className="text-xs text-gray-500">{guest.owner ? `Shared by ${guest.owner}` : 'Shared document'} · view only: new numbers and print settings you change are not saved</span>
+              <span className="text-xs text-gray-500">{guest.owner ? `Shared by ${guest.owner}` : 'Shared document'} · edit freely: your changes stay on this page and are not saved (a reload starts over)</span>
             </div>
-            {!isNotes && (forms || []).length > 1 && (
-              <select value={activeFormId} onChange={(e) => { setActiveFormId(e.target.value); setView((v) => ({ ...v, form: e.target.value })); }} className="bg-white border border-gray-300 text-gray-900 text-sm rounded p-1.5 font-semibold" aria-label="Version">
+            {!isNotes && (
+              <select value={activeFormId} onChange={(e) => { if (e.target.value === 'NEW') generateNewForm(); else { setActiveFormId(e.target.value); setView((v) => ({ ...v, form: e.target.value })); } }} className="bg-white border border-gray-300 text-gray-900 text-sm rounded p-1.5 font-semibold" aria-label="Version">
                 {(forms || []).map((f) => <option key={f.id} value={f.id}>{f.id}</option>)}
+                <option value="NEW">+ New form</option>
               </select>
             )}
             <div className="flex rounded-md border border-gray-300 overflow-hidden text-sm font-semibold" role="group" aria-label="View">
-              <button onClick={() => setView((v) => ({ ...v, mode: 'scroll', key: false, form: activeFormId }))} className={`px-3 py-1.5 ${view.mode !== 'edit' && !view.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>{isNotes ? 'Pages' : 'Student pages'}</button>
-              {keyOK && <button onClick={() => setView((v) => ({ ...v, mode: 'scroll', key: true, form: activeFormId }))} className={`px-3 py-1.5 border-l border-gray-300 ${view.mode !== 'edit' && view.key ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Answer key</button>}
-              <button onClick={() => { setActiveTab('settings'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 border-l border-gray-300 ${view.mode === 'edit' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Print settings</button>
+              <button onClick={() => { setActiveTab('student'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 ${activeTab === 'student' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>{isNotes ? 'Pages' : 'Student pages'}</button>
+              {keyOK && <button onClick={() => { setActiveTab('key'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 border-l border-gray-300 ${activeTab === 'key' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Answer key</button>}
+              <button onClick={() => { setActiveTab('standards'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 border-l border-gray-300 ${activeTab === 'standards' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Standards</button>
+              <button onClick={() => { setActiveTab('settings'); setView((v) => ({ ...v, mode: 'edit' })); }} className={`px-3 py-1.5 border-l border-gray-300 ${activeTab === 'settings' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Print settings</button>
             </div>
             <button onClick={rerollAll} title="Roll new numbers for every version (the answer key follows). Not saved: reload to get the shared numbers back." className="px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-sm font-semibold">New numbers</button>
             {rerolled && <button onClick={restoreShared} title="Go back to the numbers the teacher shared" className="px-3 py-1.5 rounded-md border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 text-sm font-semibold">Original numbers</button>}
@@ -1248,15 +1283,25 @@ function App({ config }) {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
           {activeTab === 'standards' && (
             <div className="bg-white p-8 shadow-lg border border-gray-200 rounded-lg animate-in fade-in duration-200">
-              <h2 className="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">Filter Standards</h2>
-              <p className="text-gray-600 mb-6">Deselect a standard below to immediately remove all its associated questions from the generated tests and answer keys.</p>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-6 border-b pb-2">
+                <h2 className="text-2xl font-bold text-gray-800">Filter Standards</h2>
+                <div role="group" aria-label="Standards framework" className="flex rounded-md border border-gray-300 overflow-hidden text-sm font-semibold">
+                  <button onClick={() => setFramework('mn')} className={`px-3 py-1.5 ${fwWanted === 'mn' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Minnesota 2022</button>
+                  <button onClick={() => setFramework('ccss')} className={`px-3 py-1.5 border-l border-gray-300 ${fwWanted === 'ccss' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}>Common Core</button>
+                </div>
+              </div>
+              <p className="text-gray-600 mb-6">Deselect a standard below to immediately remove all its associated questions from the generated tests and answer keys. The standards you choose here (Minnesota 2022 or Common Core) also show on the pages and the Assessment Specs page.</p>
+              {fwWanted === 'ccss' && !ccss && <div className="mb-4 p-3 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-sm">{ccssErr ? "Couldn't load the Common Core standards. Check the internet connection, then choose Common Core again." : 'Loading the Common Core standards…'}</div>}
               <div className="space-y-3">
-                {Object.entries(standards).map(([std, desc]) => {
-                   const isActive = !disabledStandards.includes(std);
+                {stdRows().map((row) => {
+                   const isActive = row.mns.some((m) => !disabledStandards.includes(m));
                    return (
-                     <label key={std} className={`flex items-start space-x-4 p-4 border rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200 opacity-70 hover:opacity-100'}`}>
-                       <input type="checkbox" className="mt-1 w-5 h-5 accent-blue-600 cursor-pointer" checked={isActive} onChange={(e) => { if (e.target.checked) setDisabledStandards(prev => prev.filter(s => s !== std)); else setDisabledStandards(prev => [...prev, std]); }} />
-                       <div><div className={`font-bold ${isActive ? 'text-blue-800' : 'text-gray-600'}`}>{std}</div><div className="text-sm text-gray-600">{desc}</div></div>
+                     <label key={row.key} className={`flex items-start space-x-4 p-4 border rounded-lg cursor-pointer transition-colors ${isActive ? 'bg-blue-50 border-blue-200 hover:bg-blue-100' : 'bg-gray-50 border-gray-200 opacity-70 hover:opacity-100'}`}>
+                       <input type="checkbox" className="mt-1 w-5 h-5 accent-blue-600 cursor-pointer" checked={isActive} onChange={(e) => { const on = e.target.checked; setDisabledStandards((prev) => (on ? prev.filter((s) => !row.mns.includes(s)) : [...prev.filter((s) => !row.mns.includes(s)), ...row.mns])); }} />
+                       <div className="space-y-1.5">
+                         {row.items.map((it) => <div key={it.code}><div className={`font-bold ${isActive ? 'text-blue-800' : 'text-gray-600'}`}>{it.code}</div><div className="text-sm text-gray-600">{it.desc}</div></div>)}
+                         {fw === 'ccss' && <div className="text-xs text-gray-400">Minnesota 2022: {row.mns.join(', ')}</div>}
+                       </div>
                      </label>
                    );
                 })}
@@ -1328,7 +1373,7 @@ function App({ config }) {
             </div>
           )}
           {activeTab === 'student' && !activeFilteredForm && <div className="p-8 text-center text-gray-500 italic bg-white rounded shadow w-[8.5in] mx-auto">No active questions. Check Standards filter.</div>}
-          {activeTab === 'key' && activeFilteredForm && <AnswerKeyView formObj={activeFilteredForm} params={params} updateParam={updateParam} settings={settings} toggleSectionPageBreak={toggleSectionPageBreak} hiddenQuestions={hiddenQuestions} setHiddenQuestions={setHiddenQuestions} templates={templates} />}
+          {activeTab === 'key' && keyOK && activeFilteredForm && <AnswerKeyView formObj={activeFilteredForm} params={params} updateParam={updateParam} settings={settings} toggleSectionPageBreak={toggleSectionPageBreak} hiddenQuestions={hiddenQuestions} setHiddenQuestions={setHiddenQuestions} templates={templates} />}
         </main>
       </div>
       )}
@@ -1349,8 +1394,12 @@ function App({ config }) {
                     <tr><th className="p-3 font-bold w-1/4">Standard</th><th className="p-3 font-bold">Topic Description</th><th className="p-3 font-bold text-center">Questions</th></tr>
                   </thead>
                   <tbody className="divide-y divide-gray-300">
-                    {Object.entries(getStandardsSummary()).map(([std, qArray]) => (
-                      <tr key={std}><td className="p-4 font-bold">{std}</td><td className="p-4 text-sm">{standards[std] || ""}</td><td className="p-4 text-xs font-mono text-center font-bold text-blue-800">{qArray.join(', ')}</td></tr>
+                    {Object.entries(getStandardsSummary()).reduce((rows, [std, qArray]) => {
+                      // Common Core: one row per CCSS code, with the questions of every MN benchmark that maps to it.
+                      (fw === 'ccss' ? (ccss.map[std] || [std]) : [std]).forEach((code) => { const r = rows.find((x) => x[0] === code); if (r) r[1].push(...qArray); else rows.push([code, [...qArray]]); });
+                      return rows;
+                    }, []).map(([std, qArray]) => (
+                      <tr key={std}><td className="p-4 font-bold">{std}</td><td className="p-4 text-sm">{(fw === 'ccss' ? ccss.text[std] : null) || standards[std] || ""}</td><td className="p-4 text-xs font-mono text-center font-bold text-blue-800">{qArray.join(', ')}</td></tr>
                     ))}
                     {Object.keys(getStandardsSummary()).length === 0 && <tr><td colSpan="3" className="p-4 text-center italic text-gray-500">No forms selected or standards filtered out.</td></tr>}
                   </tbody>
@@ -1363,6 +1412,7 @@ function App({ config }) {
         {settings.printKeys && filteredFormsToPrint.map((form) => <AnswerKeyView key={`print-key-${form.id}`} formObj={form} params={params} updateParam={updateParam} settings={settings} toggleSectionPageBreak={toggleSectionPageBreak} isPrint={true} hiddenQuestions={hiddenQuestions} templates={templates} />)}
       </div>
     </div>
+    </DocContext.Provider>
   );
 }
 
