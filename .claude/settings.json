@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run publish-test *)",
+      "Bash(npm run remove-test *)",
+      "Bash(npm run release-engine *)"
+    ]
+  }
+}
